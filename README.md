@@ -96,6 +96,19 @@ once:
 The server decides; the Android app polls `/api/nudges` every 15 minutes
 (WorkManager) and on open, and posts them. No Firebase.
 
+## Public demo
+
+`PACE_DEMO=1` runs the web app as a public demo, on the same build: no
+login (every visitor is `demo`), no worker and no Time Doctor. A made-up
+freelancer in Berlin (30 USD an hour, ₹2,00,000 a month after TDS) has six
+months of history, good months and slow ones, with standups, planning and
+client calls among the tasks (`backend/pace/demo.py`). Each past day is drawn
+from a generator seeded with its date, so it's the same for every visitor;
+today fills up with the clock. Sync regenerates it to the minute, the nudge
+rules run on it as on real hours, and settings changes and uploads are
+refused, so nothing a visitor does is kept. It refuses to start with an OIDC
+client secret or a Time Doctor password set.
+
 ## Development
 
 ```bash

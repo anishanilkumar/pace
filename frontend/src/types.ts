@@ -104,4 +104,6 @@ export interface Summary {
   fetch: FetchState;
   nudges: NudgeItem[];
   now: string;
+  /** The public demo: made-up hours, settings fixed, nothing stored. */
+  demo: boolean;
 }

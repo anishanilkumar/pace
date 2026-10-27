@@ -65,6 +65,8 @@ def _s256(verifier: str) -> str:
 
 def current_user(request: Request) -> str | None:
     s = settings()
+    if s.demo:
+        return "demo"
     if s.dev_user:
         return s.dev_user
     # The web app sends its session as a cookie; the Android app, which has no
@@ -89,6 +91,8 @@ _CHALLENGE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 @router.get("/login")
 async def login(app_challenge: str = ""):
+    if settings().demo:
+        return RedirectResponse("/", status_code=302)
     if app_challenge and not _CHALLENGE.match(app_challenge):
         raise HTTPException(400, "Bad app_challenge.")
     meta = await _oidc()
@@ -211,6 +215,8 @@ class Exchange(BaseModel):
 
 @router.post("/app/exchange")
 async def app_exchange(body: Exchange):
+    if settings().demo:
+        raise HTTPException(403, "The demo has no sign-in.")
     handoff = db.pop_app_handoff(_hash(body.code))
     if handoff is None or not secrets.compare_digest(_s256(body.verifier), handoff["challenge"]):
         raise HTTPException(403, "Sign-in expired or was not for this app. Sign in again.")

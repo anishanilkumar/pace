@@ -211,6 +211,10 @@ ul { list-style: none; }
 .pill:hover { color: var(--ink); }
 .pill:disabled { cursor: default; }
 .pill-warn { color: var(--gold); }
+/* The public demo: gold, the colour for "not the real thing", and still. As Foodlog. */
+.pill-demo, .pill-demo:hover { color: var(--gold); }
+.pill-dot.pill-dot-demo { background: var(--gold); }
+.demo-note { background: var(--panel); border-left: 6px solid var(--gold); padding: 0.875rem var(--pad); color: var(--ink-dim); }
 /* Status only: the Sync button next to it does the reading. */
 .pill-status { cursor: default; }
 .pill-status:hover { color: var(--ink-dim); }

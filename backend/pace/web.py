@@ -8,7 +8,8 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from pydantic import ValidationError
 
-from . import auth_web, db, worker
+from . import auth_web, db, demo, worker
+from .config import settings
 from .plan import Prefs, history, month_plan, work_split
 from .worker import HISTORY_MONTHS, month_start
 from .timedoctor import FetchError, cover, parse_worklog
@@ -53,6 +54,8 @@ def _fetch_state() -> dict:
 
 
 def summary(month: str | None = None) -> dict:
+    if settings().demo:
+        demo.refresh()
     prefs = db.get_prefs()
     now = datetime.now(timezone.utc)
     today = now.astimezone(prefs.zone).date()
@@ -74,17 +77,20 @@ def summary(month: str | None = None) -> dict:
         "fetch": _fetch_state(),
         "nudges": db.recent_nudges(5),
         "now": now.isoformat(timespec="seconds"),
+        "demo": settings().demo,
     }
 
 
 def create_app() -> FastAPI:
     db.init()
+    if settings().demo:
+        demo.refresh(force=True)
     app = FastAPI(title="Pace", docs_url=None, redoc_url=None, openapi_url=None)
     app.include_router(auth_web.router)
 
     @app.get("/api/me")
     def me(user: str = Depends(require_user)):
-        return {"username": user}
+        return {"username": user, "demo": settings().demo}
 
     @app.get("/api/summary")
     def get_summary(month: str | None = None, user: str = Depends(require_user)):
@@ -92,6 +98,8 @@ def create_app() -> FastAPI:
 
     @app.put("/api/prefs")
     async def put_prefs(request: Request, user: str = Depends(require_user)):
+        if settings().demo:
+            raise HTTPException(403, "The demo's settings are fixed. In your own Pace they're yours to set.")
         try:
             prefs = Prefs.model_validate(await request.json())
         except ValidationError as e:
@@ -103,12 +111,18 @@ def create_app() -> FastAPI:
 
     @app.post("/api/fetch", status_code=202)
     def ask_fetch(user: str = Depends(require_user)):
+        if settings().demo:
+            # No Time Doctor behind the demo: a sync brings it up to the minute.
+            demo.refresh(force=True)
+            return {"requested": False}
         db.request_fetch()
         return {"requested": True}
 
     @app.post("/api/upload")
     async def upload(file: UploadFile, user: str = Depends(require_user)):
         """The manual way in, for when the browser can't get through: the worklog CSV."""
+        if settings().demo:
+            raise HTTPException(403, "The demo doesn't take uploads.")
         raw = await file.read(MAX_CSV_BYTES + 1)
         if len(raw) > MAX_CSV_BYTES:
             raise HTTPException(413, "That CSV is over 2 MB; a month's worklog is a few KB.")

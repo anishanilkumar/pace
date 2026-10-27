@@ -76,7 +76,11 @@ export function App() {
           Pace
         </button>
         <div className="topbar-right">
-          {summary && <FetchStatus fetch={summary.fetch} offline={failed === "Offline"} />}
+          {summary && (summary.demo ? (
+            <span className="pill pill-status pill-demo" title="Made-up hours; nothing you change is kept">
+              <span className="pill-dot pill-dot-demo" aria-hidden="true" />Demo
+            </span>
+          ) : <FetchStatus fetch={summary.fetch} offline={failed === "Offline"} />)}
           {summary && (
             <button className="btn btn-sync" onClick={fetchNow} disabled={failed === "Offline" || summary.fetch.requested}
               title="Read Time Doctor now" aria-label="Sync with Time Doctor">
@@ -90,6 +94,14 @@ export function App() {
           {view === "dashboard" && <button className="pill" onClick={() => go("settings")}>Settings</button>}
         </div>
       </header>
+
+      {summary?.demo && view === "dashboard" && (
+        <p className="demo-note">
+          A demo with made-up hours: a freelancer in Berlin aiming for ₹2,00,000 a month after TDS. Today fills
+          up as the day goes on. Sync brings it up to the minute; nothing you change is kept.{" "}
+          <a href="https://github.com/anishanilkumar/pace">Source</a>
+        </p>
+      )}
 
       {!summary ? (
         failed ? (
@@ -105,7 +117,7 @@ export function App() {
           </>
         )
       ) : view === "settings" ? (
-        <Settings key={JSON.stringify(summary.prefs)} prefs={summary.prefs} onSaved={() => load()} onBack={() => go("dashboard")} />
+        <Settings key={JSON.stringify(summary.prefs)} prefs={summary.prefs} demo={summary.demo} onSaved={() => load()} onBack={() => go("dashboard")} />
       ) : (
         <Dashboard
           plan={summary.plan}

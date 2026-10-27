@@ -7,8 +7,9 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 // The server's default (plan.DEFAULT_MEETING_PATTERN), to get back to after an edit.
 const DEFAULT_MEETING_PATTERN = String.raw`\b(meetings?|stand-?ups?|calls?|sync|retro(spective)?|interviews?|1:1|demo)\b`;
 
-export function Settings({ prefs, onSaved, onBack }: {
+export function Settings({ prefs, demo, onSaved, onBack }: {
   prefs: Prefs;
+  demo: boolean;
   onSaved: () => void;
   onBack: () => void;
 }) {
@@ -56,6 +57,12 @@ export function Settings({ prefs, onSaved, onBack }: {
   return (
     <>
       <button className="back" onClick={onBack}>Back</button>
+      {demo && (
+        <p className="demo-note">
+          The demo's settings are fixed, so this page is a look only. In your own Pace they're yours to set,
+          and the plan, quota and nudges follow them.
+        </p>
+      )}
 
       <section className="instrument form">
         <div className="label">Money</div>
@@ -157,9 +164,10 @@ export function Settings({ prefs, onSaved, onBack }: {
         {saved && !dirty && <span className="saved">Saved</span>}
         {dirty && <span className="unsaved">Unsaved</span>}
         <button className="btn btn-quiet" type="button" disabled={!dirty || busy} onClick={() => { setP(prefs); setError(null); }}>Reset</button>
-        <button className="btn btn-primary" type="button" disabled={!dirty || busy} onClick={save}>Save</button>
+        <button className="btn btn-primary" type="button" disabled={demo || !dirty || busy} onClick={save}>Save</button>
       </div>
 
+      {!demo && (<>
       <section className="instrument form">
         <div className="label">Upload a worklog</div>
         <div className="field-note">
@@ -176,6 +184,7 @@ export function Settings({ prefs, onSaved, onBack }: {
       <form method="post" action="/auth/logout">
         <button className="btn btn-quiet" type="submit">Sign out</button>
       </form>
+      </>)}
     </>
   );
 }

@@ -41,6 +41,9 @@ class Settings:
     # Minutes between fetches through the day (around the nudge hours), and overnight.
     fetch_every_min: int
     fetch_idle_every_min: int
+    # Public demo (pace-demo): no login, a made-up freelancer's hours, and
+    # nothing a visitor sends is stored. See demo.py.
+    demo: bool
 
     @property
     def secure_cookies(self) -> bool:
@@ -64,7 +67,13 @@ def settings() -> Settings:
         debug_dir=os.environ.get("PACE_DEBUG_DIR", ""),
         fetch_every_min=int(os.environ.get("PACE_FETCH_EVERY_MIN", "20")),
         fetch_idle_every_min=int(os.environ.get("PACE_FETCH_IDLE_EVERY_MIN", "120")),
+        demo=os.environ.get("PACE_DEMO", "") == "1",
     )
     if s.dev_user and s.secure_cookies:
         raise RuntimeError("PACE_DEV_USER skips login; it cannot be used with an https public URL.")
+    # As in Foodlog: the demo is public and logs everyone in as "demo".
+    # Holding a real secret means it was started with the real unit's
+    # environment, and so very likely pointed at the real data.
+    if s.demo and (s.oidc_client_secret or s.td_password):
+        raise RuntimeError("PACE_DEMO must not run with an OIDC client secret or a Time Doctor password.")
     return s

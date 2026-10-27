@@ -36,5 +36,9 @@ rsync -az frontend/dist/index.html "$target:$DEPLOY_WEB_DIR/"
 rsync -az --delete frontend/dist/ "$target:$DEPLOY_WEB_DIR/"
 
 echo "==> Restarting"
-ssh "$target" 'sudo systemctl restart pace-web pace-worker && systemctl is-active pace-web pace-worker'
+# pace-demo only exists once the NixOS config declaring it is switched in;
+# until then, restart the other two and let the rebuild start it.
+ssh "$target" 'units="pace-web pace-worker"
+  systemctl cat pace-demo >/dev/null 2>&1 && units="$units pace-demo"
+  sudo systemctl restart $units && systemctl is-active $units'
 echo "Deployed."

@@ -98,3 +98,58 @@ def test_summary_has_history():
 def test_fetch_span_rereads_last_month_early_on():
     assert worker.fetch_span(date(2026, 11, 2)) == (date(2026, 10, 1), date(2026, 11, 2))
     assert worker.fetch_span(date(2026, 11, 4)) == (date(2026, 11, 1), date(2026, 11, 4))
+
+
+def demo_client(monkeypatch) -> TestClient:
+    from pace import config
+
+    monkeypatch.setenv("PACE_DEMO", "1")
+    monkeypatch.delenv("PACE_DEV_USER", raising=False)
+    config.settings.cache_clear()
+    return TestClient(create_app())
+
+
+def test_demo_has_a_lived_in_history_and_stores_nothing(monkeypatch):
+    c = demo_client(monkeypatch)
+    s = c.get("/api/summary").json()
+    assert s["demo"] is True
+    assert c.get("/api/me").json() == {"username": "demo", "demo": True}
+    assert s["prefs"]["target_net_inr"] == 200000
+    assert len(s["history"]) == 7
+    assert all(m["hours"] > 40 for m in s["history"][:-1])
+    assert s["work"]["tasks_known"] is True and s["work"]["meeting_hours"] > 0
+    assert s["fetch"]["last_ok"] is True
+    # Settings and uploads are refused; Sync works and stores nothing new.
+    assert c.put("/api/prefs", json=s["prefs"], headers=H).status_code == 403
+    r = c.post("/api/upload", files={"file": ("w.csv", "a,b\n1,2\n", "text/csv")}, headers=H)
+    assert r.status_code == 403
+    assert c.post("/api/fetch", headers=H).json() == {"requested": False}
+    assert db.fetch_requested() is False
+
+
+def test_demo_days_are_stable_and_today_follows_the_clock():
+    from datetime import date, datetime, timezone
+
+    from pace import demo
+
+    p = demo.prefs(date(2026, 10, 27))
+    assert demo.plan_day(date(2026, 9, 15), p) == demo.plan_day(date(2026, 9, 15), p)
+    assert demo.plan_day(date(2026, 10, 16), p) == []  # third Friday: leave
+    total = 4 * 3600
+    t = lambda h, m: datetime(2026, 10, 27, h, m, tzinfo=timezone.utc)  # noqa: E731 - Berlin is UTC+1
+    assert demo.worked_so_far(t(8, 0), total) == 0          # 09:00 Berlin
+    assert demo.worked_so_far(t(10, 15), total) == 2 * 3600  # 11:15: two hours in
+    assert demo.worked_so_far(t(12, 15), total) == 3.5 * 3600  # 13:15: lunch since 12:45
+    assert demo.worked_so_far(t(20, 0), total) == total
+
+
+def test_demo_refuses_real_secrets(monkeypatch):
+    import pytest
+
+    from pace import config
+
+    monkeypatch.setenv("PACE_DEMO", "1")
+    monkeypatch.setenv("TD_PASSWORD", "x")
+    config.settings.cache_clear()
+    with pytest.raises(RuntimeError):
+        config.settings()
