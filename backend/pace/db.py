@@ -27,15 +27,17 @@ CREATE TABLE IF NOT EXISTS days (
     updated_at  TEXT NOT NULL
 );
 
--- Today's running total as each fetch saw it. "Nothing tracked since 14:10"
--- is read from here: the last sample whose total differs from the one
--- before. Kept a few days, then swept.
-CREATE TABLE IF NOT EXISTS samples (
-    at          TEXT NOT NULL,
+-- Time per task per day, from Time Doctor's Projects report: what splits the
+-- hours into meetings and productive work. Replaced wholesale for every
+-- range a fetch covers, like days.
+CREATE TABLE IF NOT EXISTS task_time (
     day         TEXT NOT NULL,
-    seconds     INTEGER NOT NULL
+    task_id     TEXT NOT NULL,
+    task        TEXT NOT NULL,
+    project     TEXT NOT NULL,
+    seconds     INTEGER NOT NULL,
+    PRIMARY KEY (day, task_id)
 );
-CREATE INDEX IF NOT EXISTS samples_day ON samples(day, at);
 
 CREATE TABLE IF NOT EXISTS fetches (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,22 +191,25 @@ def hours(start: date, end: date) -> dict[date, float]:
     return {date.fromisoformat(r["day"]): r["seconds"] / 3600 for r in rows}
 
 
-def add_sample(at: datetime, day: date, seconds: int) -> None:
+TaskRow = tuple[date, str, str, str, int]  # day, task_id, task, project, seconds
+
+
+def put_tasks(start: date, end: date, rows: list[TaskRow]) -> None:
+    """Replace start..end's task time: a task gone from the report goes from here too."""
     with write_tx() as conn:
-        conn.execute("DELETE FROM samples WHERE day < ?", ((day - timedelta(days=3)).isoformat(),))
-        conn.execute("INSERT INTO samples (at, day, seconds) VALUES (?, ?, ?)",
-                     (at.astimezone(timezone.utc).isoformat(timespec="seconds"), day.isoformat(), int(seconds)))
+        conn.execute("DELETE FROM task_time WHERE day BETWEEN ? AND ?", (start.isoformat(), end.isoformat()))
+        conn.executemany(
+            "INSERT INTO task_time (day, task_id, task, project, seconds) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(day, task_id) DO UPDATE SET seconds = seconds + excluded.seconds",
+            [(d.isoformat(), tid, task, project, int(s)) for d, tid, task, project, s in rows],
+        )
 
 
-def last_change(day: date) -> datetime | None:
-    """When today's total last grew, as far as the samples saw. None: never seen it move."""
-    rows = _read("SELECT at, seconds FROM samples WHERE day = ? ORDER BY at", (day.isoformat(),))
-    changed, prev = None, 0
-    for r in rows:
-        if r["seconds"] != prev:
-            changed = datetime.fromisoformat(r["at"])
-            prev = r["seconds"]
-    return changed
+def tasks(start: date, end: date) -> list[tuple[date, str, str, int]]:
+    """(day, task, project, seconds) for start..end."""
+    rows = _read("SELECT day, task, project, seconds FROM task_time WHERE day BETWEEN ? AND ?",
+                 (start.isoformat(), end.isoformat()))
+    return [(date.fromisoformat(r["day"]), r["task"], r["project"], r["seconds"]) for r in rows]
 
 
 # --- fetch runs ----------------------------------------------------------------

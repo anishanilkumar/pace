@@ -80,3 +80,24 @@ def test_timesheet_not_signed_in_and_ambiguous():
     with pytest.raises(FetchError):
         parse_timesheet(two)
     assert parse_timesheet(two, "2") == {}
+
+
+# renderProjectsReport.php, as the Projects report page gets it (trimmed).
+PROJECTS = {"report": [{"name": "TAI", "users": [{"id": "1001", "name": "Sample", "tasks": [
+    {"id": "11", "name": "Engineering Meeting", "entries": [
+        {"date": "2026-10-20", "workedTime": 3600}, {"date": "2026-10-21", "workedTime": 0}]},
+    {"id": "12", "name": "Foundational certificate issue ", "entries": [{"date": "2026-10-21", "workedTime": 4771}]},
+]}]}]}
+
+
+def test_projects_report_json():
+    from pace.timedoctor import parse_projects_report
+
+    rows = parse_projects_report(PROJECTS)
+    assert rows == [
+        (date(2026, 10, 20), "11", "Engineering Meeting", "TAI", 3600),
+        (date(2026, 10, 21), "12", "Foundational certificate issue", "TAI", 4771),
+    ]
+    assert parse_projects_report(PROJECTS, "999") == []
+    with pytest.raises(FetchError):
+        parse_projects_report({"status": "Error"})

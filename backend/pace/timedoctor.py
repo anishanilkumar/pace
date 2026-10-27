@@ -15,6 +15,14 @@ What the web app does (seen in its network traffic, October 2026):
   alone picks the user; the other parameters the panel sends change nothing.
 * Without a session it answers 302 to /login, or, as XHR,
   ``{"status": "Error", "message": "not authenticated, please login"}``.
+* Time per task per day, for the meetings/work split, comes from the Projects
+  report (``/v2/index.php?page=projects_report``). The page POSTs a form to
+  ``/v2/content/projectsReport/renderProjectsReport.php`` with every project
+  id, the user's id, a CSRF token from the page and the dates, and gets JSON:
+  ``report -> [project {name, users -> [{tasks -> [{id, name, entries ->
+  [{date, workedTime}]}]}]}]``. Rather than rebuild that form, the worker
+  opens the page, takes the request it makes on load, and sends it again with
+  its own dates. Six months in one request is about 85 KB.
 
 So the browser is only needed to sign in. The request itself goes through the
 browser context (page.request), which carries its cookies. The cookies are
@@ -34,6 +42,7 @@ import logging
 import os
 import re
 from datetime import date, datetime, timedelta
+from urllib.parse import parse_qsl, urlencode
 
 from .config import settings
 
@@ -246,6 +255,54 @@ async def _timesheet(page, start: date, end: date) -> dict[date, int]:
     return parse_timesheet(data, s.td_user_id)
 
 
+TaskRow = tuple[date, str, str, str, int]  # day, task_id, task, project, seconds
+_PROJECTS_PAGE = "/v2/index.php?page=projects_report"
+_PROJECTS_RENDER = "/v2/content/projectsReport/renderProjectsReport.php"
+
+
+def parse_projects_report(data: dict, user_id: str = "") -> list[TaskRow]:
+    """Per-day task time from renderProjectsReport's JSON.
+
+    The report is filtered to the signed-in user already; `user_id` only
+    matters for an account that sees others (TD_USER_ID).
+    """
+    if not isinstance(data.get("report"), list):
+        raise FetchError("Time Doctor's projects report came back without a report.")
+    rows: list[TaskRow] = []
+    for project in data["report"]:
+        pname = str(project.get("name") or "")
+        for user in project.get("users") or []:
+            if user_id and str(user.get("id")) != user_id:
+                continue
+            for task in user.get("tasks") or []:
+                tid, tname = str(task.get("id") or ""), str(task.get("name") or "").strip()
+                for e in task.get("entries") or []:
+                    seconds = int(e.get("workedTime") or 0)
+                    if seconds:
+                        rows.append((date.fromisoformat(e["date"]), tid, tname, pname, seconds))
+    return rows
+
+
+async def _tasks(page, start: date, end: date) -> list[TaskRow]:
+    s = settings()
+    async with page.expect_request(lambda r: _PROJECTS_RENDER in r.url, timeout=45_000) as req:
+        await page.goto(s.td_base_url + _PROJECTS_PAGE, wait_until="domcontentloaded")
+    form = parse_qsl((await req.value).post_data or "", keep_blank_values=True)
+    if not any(k == "csrf_token" for k, _ in form):
+        raise FetchError("The projects report's request has changed shape (no csrf_token).")
+    form = [(k, start.isoformat() if k == "fromDate" else end.isoformat() if k == "toDate" else
+             "daily" if k == "reportType" else v) for k, v in form]
+    r = await page.request.post(
+        s.td_base_url + _PROJECTS_RENDER,
+        data=urlencode(form),
+        headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                 "X-Requested-With": "XMLHttpRequest"},
+    )
+    if not r.ok:
+        raise FetchError(f"Time Doctor's projects report answered HTTP {r.status}.")
+    return parse_projects_report(await r.json(), s.td_user_id)
+
+
 async def _save_debug(page, what: str) -> None:
     d = settings().debug_dir
     if not d or page is None:
@@ -261,15 +318,17 @@ async def _save_debug(page, what: str) -> None:
         log.warning("could not save debug page: %s", e)
 
 
-async def fetch_range(start: date, end: date, headed: bool = False) -> dict[date, int]:
-    """Seconds per day for start..end (inclusive), every day present."""
-    return await fetch_spans([(start, end)], headed=headed)
-
-
-async def fetch_spans(spans: list[tuple[date, date]], headed: bool = False) -> dict[date, int]:
+async def fetch_spans(
+    spans: list[tuple[date, date]],
+    task_span: tuple[date, date] | None = None,
+    headed: bool = False,
+) -> tuple[dict[date, int], list[TaskRow] | None]:
     """Several ranges in one browser session (the backfill reads a month at a time).
 
-    Every day of every range is present, 0 where nothing was tracked.
+    Returns seconds per day, every day of every range present (0 where
+    nothing was tracked), and, if `task_span` is given, the task time in it.
+    The task read is a bonus: if it fails, the hours still count, the error
+    is logged, and the tasks come back as None so the old ones are kept.
     """
     from playwright.async_api import async_playwright
 
@@ -303,7 +362,14 @@ async def fetch_spans(spans: list[tuple[date, date]], headed: bool = False) -> d
                     await context.storage_state(path=state)
                     os.chmod(state, 0o600)
                 out.update(cover(found, start, end))
-            return out
+            tasks = None
+            if task_span:
+                try:
+                    tasks = await _tasks(page, *task_span)
+                except Exception as e:
+                    log.warning("task time not read: %s: %s", type(e).__name__, str(e)[:200])
+                    await _save_debug(page, "tasks-failed")
+            return out, tasks
         except FetchError:
             await _save_debug(page, "failed")
             raise

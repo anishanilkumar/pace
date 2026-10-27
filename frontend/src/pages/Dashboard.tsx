@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { DayChart } from "../components/DayChart";
 import { Ticks } from "../components/Ticks";
 import { ageMin, clock, monthName, rupees, span, stamp } from "../format";
-import type { FetchState, HistoryMonth, NudgeItem, Plan, Prefs } from "../types";
+import type { FetchState, HistoryMonth, NudgeItem, Plan, Prefs, Work } from "../types";
 
 /** Hours older than this are shown as stale: dimmed, with their age. */
 export const STALE_MIN = 60;
 
-export function Dashboard({ plan, prefs, fetch, nudges, history, month, onMonth, onOpenMonth, onOpenSettings }: {
+export function Dashboard({ plan, work, prefs, fetch, nudges, history, month, onMonth, onOpenMonth, onOpenSettings }: {
   plan: Plan;
+  work: Work;
   prefs: Prefs;
   fetch: FetchState;
   nudges: NudgeItem[];
@@ -22,9 +24,10 @@ export function Dashboard({ plan, prefs, fetch, nudges, history, month, onMonth,
   return (
     <div className={stale ? "is-stale" : ""} style={{ display: "contents" }}>
       {stale && <StaleNote fetch={fetch} onOpenSettings={onOpenSettings} />}
-      {current && <Today plan={plan} prefs={prefs} />}
+      {current && <Today plan={plan} />}
       <Verdict plan={plan} prefs={prefs} />
-      <Month plan={plan} month={month} onMonth={onMonth} />
+      <Month plan={plan} work={work} month={month} onMonth={onMonth} />
+      <WorkSplit work={work} month={month} onOpenSettings={onOpenSettings} />
       {nudges.length > 0 && current && <Nudges nudges={nudges} />}
       {history.length > 0 && <History months={history} shown={month} onOpen={onOpenMonth} />}
     </div>
@@ -59,6 +62,9 @@ function History({ months, shown, onOpen }: { months: HistoryMonth[]; shown: str
                 <span className="history-figures">
                   <span className="history-hours">{clock(m.hours)}</span>
                   <span className="stamp">{m.days_tracked ? rupees(m.net) : "No time"}</span>
+                  {m.meeting_share !== null && (
+                    <span className="stamp history-meetings">{Math.round(m.meeting_share * 100)}% meetings</span>
+                  )}
                 </span>
               </button>
             </li>
@@ -83,7 +89,7 @@ function StaleNote({ fetch, onOpenSettings }: { fetch: FetchState; onOpenSetting
   );
 }
 
-function Today({ plan, prefs }: { plan: Plan; prefs: Prefs }) {
+function Today({ plan }: { plan: Plan }) {
   if (!plan.today_working) {
     return (
       <section className="instrument today">
@@ -110,7 +116,7 @@ function Today({ plan, prefs }: { plan: Plan; prefs: Prefs }) {
       <Ticks total={total} lit={Math.min(lit, total)} over={Math.max(0, Math.min(lit - total, 16))} />
       <div className="today-left">
         {plan.today_left > 0 ? (
-          <><strong>{span(plan.today_left)}</strong> left. The window closes at {prefs.day_end}.</>
+          <><strong>{span(plan.today_left)}</strong> left for today, whenever suits.</>
         ) : (
           <><strong>Today's quota is done.</strong> More now eases the days ahead.</>
         )}
@@ -150,7 +156,7 @@ function Verdict({ plan, prefs }: { plan: Plan; prefs: Prefs }) {
   );
 }
 
-function Month({ plan, month, onMonth }: { plan: Plan; month: string; onMonth: (by: number) => void }) {
+function Month({ plan, work, month, onMonth }: { plan: Plan; work: Work; month: string; onMonth: (by: number) => void }) {
   const N = 40;
   const per = plan.target_hours / N;
   const lit = per > 0 ? Math.min(N, Math.floor(plan.worked_hours / per)) : 0;
@@ -188,13 +194,82 @@ function Month({ plan, month, onMonth }: { plan: Plan; month: string; onMonth: (
         <Fact label="Working days" value={`${plan.working_days}`} />
         <Fact label="Plan a day" value={span(plan.plan_per_day)} />
       </div>
-      <DayChart days={plan.days} plan={plan.plan_per_day} today={plan.today} />
+      <DayChart days={plan.days} plan={plan.plan_per_day} today={plan.today} meetings={work.meeting_by_day} />
       <div className="legend stamp">
         <span><i style={{ background: "var(--arc)" }} />Met plan</span>
         <span><i style={{ background: "var(--arc-dim)" }} />Short</span>
+        {work.tasks_known && <span><i style={{ background: "var(--meeting)" }} />Meetings</span>}
         <span><i style={{ background: "var(--slate)" }} />Day off</span>
         <span><i style={{ background: "var(--gold)", height: 2 }} />Plan</span>
       </div>
+    </section>
+  );
+}
+
+/**
+ * The month's hours split by task: meetings (tasks matching the rule in
+ * settings) against productive work, then the tasks themselves, so a task
+ * the rule gets wrong is easy to spot.
+ */
+function WorkSplit({ work, month, onOpenSettings }: { work: Work; month: string; onOpenSettings: () => void }) {
+  const [showAll, setShowAll] = useState(false);
+  if (!work.tasks_known) {
+    return (
+      <section className="instrument">
+        <div className="label">Meetings and work</div>
+        <div className="empty" style={{ padding: "1.5rem 0 0.5rem" }}>
+          <div className="empty-title">Not read yet</div>
+          <div>Time per task arrives with the next read of Time Doctor.</div>
+        </div>
+      </section>
+    );
+  }
+  const total = work.meeting_hours + work.productive_hours;
+  const N = 40;
+  const meetingTicks = total > 0 ? Math.round((work.meeting_hours / total) * N) : 0;
+  const tasks = showAll ? work.tasks : work.tasks.slice(0, 8);
+  return (
+    <section className="instrument work">
+      <div className="section-head">
+        <div className="label">Meetings and work, {monthName(month)}</div>
+      </div>
+      {total === 0 ? (
+        <div className="field-note">No task time this month.</div>
+      ) : (
+        <>
+          <div className="work-figures">
+            <div className="work-figure">
+              <span className="stamp">PRODUCTIVE</span>
+              <span className="readout">{clock(work.productive_hours)}</span>
+              <span className="stamp">{Math.round((work.productive_hours / total) * 100)}%</span>
+            </div>
+            <div className="work-figure work-figure-meeting">
+              <span className="stamp">MEETINGS</span>
+              <span className="readout">{clock(work.meeting_hours)}</span>
+              <span className="stamp">{Math.round((work.meeting_hours / total) * 100)}%</span>
+            </div>
+          </div>
+          <Ticks className="ticks-split" total={N} lit={N - meetingTicks} />
+          <ul className="tasks">
+            {tasks.map((t) => (
+              <li key={`${t.project}/${t.task}`}>
+                <span className={`task-mark${t.meeting ? " task-mark-meeting" : ""}`} aria-label={t.meeting ? "Meeting" : "Work"} />
+                <span className="task-name">{t.task}</span>
+                <span className="stamp">{t.project}</span>
+                <span className="task-hours">{clock(t.hours)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="work-foot">
+            {work.tasks.length > 8 && (
+              <button className="pill" onClick={() => setShowAll(!showAll)}>
+                {showAll ? "Fewer tasks" : `All ${work.tasks.length} tasks`}
+              </button>
+            )}
+            <button className="pill" onClick={onOpenSettings}>Meeting rule</button>
+          </div>
+        </>
+      )}
     </section>
   );
 }

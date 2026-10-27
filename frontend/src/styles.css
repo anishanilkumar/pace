@@ -9,7 +9,11 @@
    - `--out-of-reach` is alert, the one bad state: the month's target can't
      be met at a sane day's hours. Rare by construction, so it reads.
    - `--stale` is slate: hours that may be old (Time Doctor unread for an
-     hour or more). The numbers stay, dimmed and stamped with their age. */
+     hour or more). The numbers stay, dimmed and stamped with their age.
+   - `--meeting` is the one colour added to the house palette: time in
+     meetings, against productive work in arc. A violet at the arc's
+     brightness, so it sits in the family; it is not a warning (gold) and
+     not bad (alert), just a different kind of hour. */
 
 @font-face {
   font-family: "Archivo";
@@ -63,6 +67,7 @@
   --behind: var(--gold);
   --out-of-reach: var(--alert);
   --stale: var(--slate);
+  --meeting: #b39cff;
 
   --face-data: "Archivo", "Manjari", system-ui, sans-serif;
   --face-mono: "Plex Mono", ui-monospace, "Roboto Mono", monospace;
@@ -91,6 +96,7 @@
   --arc-dim: var(--slate-dim);
   --gold: #8a7350;
   --ink: #b9c4d1;
+  --meeting: #6f6596;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -306,6 +312,29 @@ ul { list-style: none; }
 .legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; display: inline-block; }
+
+/* ---- Meetings and work --------------------------------------------------- */
+
+.work { display: flex; flex-direction: column; gap: 1rem; }
+.work-figures { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+.work-figure { display: flex; flex-direction: column; gap: 0.125rem; }
+.work-figure-meeting .readout { color: var(--meeting); }
+/* The split is the whole month: productive ticks lit arc, the rest meeting. */
+.ticks-split i { background: var(--meeting); }
+.ticks-split i.lit { background: var(--arc); }
+.chart .bar-meeting { fill: var(--meeting); }
+
+.tasks li {
+  display: grid; grid-template-columns: 10px 1fr auto auto; gap: 0.75rem; align-items: baseline;
+  padding: 0.625rem 0; min-height: 44px;
+}
+.tasks li + li { border-top: var(--rule) solid var(--engrave); }
+.task-mark { width: 8px; height: 8px; background: var(--arc); transform: translateY(-1px); }
+.task-mark-meeting { background: var(--meeting); }
+.task-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-hours { font-weight: 600; font-family: var(--face-data); }
+.work-foot { display: flex; justify-content: space-between; gap: 1rem; }
+.history-meetings { color: var(--meeting); }
 
 /* ---- Last 6 months ------------------------------------------------------- */
 

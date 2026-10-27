@@ -43,6 +43,7 @@ import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** What the home screen is showing: the last summary, and whether it could refresh. */
 data class HomeState(val summary: Summary?, val offline: Boolean, val error: String?, val loading: Boolean)
@@ -153,7 +154,7 @@ private fun Today(s: Summary, stale: Boolean) {
             val lit = floor(s.todayHours * 4).toInt()
             Ticks(total, min(lit, total), lit = if (stale) p.slate else p.arc)
             Text(
-                if (s.todayLeft > 0) "${Fmt.span(s.todayLeft)} left. The window closes at ${s.dayEnd}."
+                if (s.todayLeft > 0) "${Fmt.span(s.todayLeft)} left for today, whenever suits."
                 else "Today's quota is done. More now eases the days ahead.",
                 style = Type.body, color = p.inkDim,
             )
@@ -207,7 +208,29 @@ private fun Month(s: Summary, stale: Boolean) {
             Fact("Projected", s.projectedNet?.let(Fmt::rupees) ?: "Too early", Modifier.weight(1f), estimated = s.projectedNet != null)
             Fact("Streak", "${s.streak} ${if (s.streak == 1) "day" else "days"}", Modifier.weight(0.8f))
         }
+        s.work?.let { WorkSplit(it) }
         DayBars(s)
+    }
+}
+
+/** Meetings against productive work, as the web app's split: productive arc, meetings violet. */
+@Composable
+private fun WorkSplit(w: Summary.Work) {
+    val p = LocalPalette.current
+    val total = w.meetingHours + w.productiveHours
+    if (total <= 0) return
+    val n = 40
+    val meetingTicks = (w.meetingHours / total * n).roundToInt()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Fact("Productive", "${Fmt.clock(w.productiveHours)}  ${(w.productiveHours / total * 100).roundToInt()}%", Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Stamp("Meetings", upper = true)
+                Text("${Fmt.clock(w.meetingHours)}  ${(w.meetingHours / total * 100).roundToInt()}%", style = Type.rowTitle, color = p.meeting)
+            }
+        }
+        // Every tick is a share of the month: productive lit arc, the rest meeting.
+        Ticks(n, n - meetingTicks, warn = meetingTicks, lit = p.arc, warnColor = p.meeting, gap = 2.dp)
     }
 }
 
@@ -243,6 +266,9 @@ private fun DayBars(s: Summary) {
                             else -> p.arcDim
                         }
                         drawRect(c, Offset(x, y(d.hours)), Size(bar, size.height - y(d.hours)))
+                        // Meeting time capped on top, as on the web chart.
+                        val met = min(s.work?.meetingByDay?.get(d.date) ?: 0.0, d.hours)
+                        if (met > 0) drawRect(p.meeting, Offset(x, y(d.hours)), Size(bar, size.height - y(met)))
                     }
                     d.leave -> drawRect(p.slateDim, Offset(x, y(s.planPerDay)), Size(bar, size.height - y(s.planPerDay)),
                         style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx()))))
@@ -308,7 +334,14 @@ fun Callout(color: Color, head: String, detail: String) {
 
 /** Progress as a row of index ticks: lit, then the shortfall in gold, the rest engraved. */
 @Composable
-fun Ticks(total: Int, litCount: Int, warn: Int = 0, lit: Color = LocalPalette.current.arc, gap: androidx.compose.ui.unit.Dp = 3.dp) {
+fun Ticks(
+    total: Int,
+    litCount: Int,
+    warn: Int = 0,
+    lit: Color = LocalPalette.current.arc,
+    warnColor: Color = LocalPalette.current.behind,
+    gap: androidx.compose.ui.unit.Dp = 3.dp,
+) {
     val p = LocalPalette.current
     Canvas(Modifier.fillMaxWidth().height(18.dp)) {
         val g = gap.toPx()
@@ -316,7 +349,7 @@ fun Ticks(total: Int, litCount: Int, warn: Int = 0, lit: Color = LocalPalette.cu
         for (i in 0 until total) {
             val c = when {
                 i < litCount -> lit
-                i < litCount + warn -> p.behind
+                i < litCount + warn -> warnColor
                 else -> p.engrave
             }
             drawRect(c, Offset(i * (w + g), 0f), Size(w, size.height))

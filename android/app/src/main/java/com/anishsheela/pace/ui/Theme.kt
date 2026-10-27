@@ -24,7 +24,8 @@ import com.anishsheela.pace.R
 // not a glowing screen. Tokens from jarvis/frontend/src/styles/tokens.css, as
 // the web app uses them (frontend/src/styles.css), with its semantic states:
 // on pace is arc, behind is gold, out of reach is alert (the one bad state),
-// and stale hours are slate.
+// and stale hours are slate. Meeting time is the one added colour, a violet
+// at the arc's brightness (--meeting in the web app).
 
 @Immutable
 data class Palette(
@@ -40,6 +41,7 @@ data class Palette(
     val inkDim: Color = Color(0xFF7C8FA3),
     val slate: Color = Color(0xFF55647A),
     val slateDim: Color = Color(0xFF3A4657),
+    val meeting: Color = Color(0xFFB39CFF),
 ) {
     val onPace get() = arc
     val behind get() = gold
@@ -47,7 +49,8 @@ data class Palette(
     val stale get() = slate
 
     /** Offline is a look, not a set of conditionals: the arc goes slate everywhere at once. */
-    fun offline() = copy(arc = slate, arcDim = slateDim, gold = Color(0xFF8A7350), ink = Color(0xFFB9C4D1))
+    fun offline() = copy(arc = slate, arcDim = slateDim, gold = Color(0xFF8A7350), ink = Color(0xFFB9C4D1),
+        meeting = Color(0xFF6F6596))
 }
 
 @OptIn(ExperimentalTextApi::class)

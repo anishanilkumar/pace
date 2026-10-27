@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from pydantic import ValidationError
 
 from . import auth_web, db, worker
-from .plan import Prefs, history, month_plan
+from .plan import Prefs, history, month_plan, work_split
 from .worker import HISTORY_MONTHS, month_start
 from .timedoctor import FetchError, cover, parse_worklog
 
@@ -60,10 +60,16 @@ def summary(month: str | None = None) -> dict:
     first = date(year, mon, 1)
     # Back far enough for the streak, which may run into last month.
     hours = db.hours(first - timedelta(days=120), today if (year, mon) == (today.year, today.month) else first + timedelta(days=31))
-    past = db.hours(month_start(today, HISTORY_MONTHS), today)
+    oldest = month_start(today, HISTORY_MONTHS)
+    past = db.hours(oldest, today)
+    month_end = month_start(first, -1) - timedelta(days=1)
+    # Task time only exists from the first read that took it; before that
+    # the split is empty, and `tasks_known` says so rather than showing 0 h.
+    task_rows = db.tasks(min(oldest, first), max(today, month_end))
     return {
         "plan": month_plan(prefs, hours, now, (year, mon)),
-        "history": history(prefs, past, today, HISTORY_MONTHS),
+        "work": {**work_split(prefs, task_rows, first, month_end), "tasks_known": bool(task_rows)},
+        "history": history(prefs, past, today, HISTORY_MONTHS, task_rows),
         "prefs": prefs.model_dump(),
         "fetch": _fetch_state(),
         "nudges": db.recent_nudges(5),
@@ -115,7 +121,7 @@ def create_app() -> FastAPI:
             db.fetch_finished(fid, str(e))
             raise HTTPException(422, str(e))
         # Fill the gaps inside the file's own span, not beyond it.
-        worker.ingest(cover(found, min(found), max(found)), datetime.now(timezone.utc), live=False)
+        worker.ingest(cover(found, min(found), max(found)))
         db.fetch_finished(fid)
         worker.run_nudges(datetime.now(timezone.utc))
         return {"days": len(found), "from": min(found).isoformat(), "to": max(found).isoformat()}

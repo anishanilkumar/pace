@@ -28,8 +28,9 @@ data class Summary(
     val projectedNet: Double?,
     val streak: Int,
     val maxHoursPerDay: Double,
-    val dayEnd: String,
     val days: List<Day>,
+    /** Meetings and productive work for the month (backend plan.work_split); null until task time has been read. */
+    val work: Work?,
     val lastGoodAt: OffsetDateTime?,
     val lastOk: Boolean?,
     val lastError: String?,
@@ -37,6 +38,8 @@ data class Summary(
     val nudges: List<Nudge>,
 ) {
     data class Day(val date: String, val hours: Double, val working: Boolean, val leave: Boolean, val future: Boolean)
+
+    data class Work(val meetingHours: Double, val productiveHours: Double, val meetingByDay: Map<String, Double>)
 
     companion object {
         fun parse(o: JSONObject): Summary {
@@ -65,10 +68,17 @@ data class Summary(
                 projectedNet = if (p.isNull("projected_net")) null else p.getDouble("projected_net"),
                 streak = p.getInt("streak"),
                 maxHoursPerDay = prefs.getDouble("max_hours_per_day"),
-                dayEnd = prefs.getString("day_end"),
                 days = (0 until d.length()).map {
                     val x = d.getJSONObject(it)
                     Day(x.getString("date"), x.getDouble("hours"), x.getBoolean("working"), x.getBoolean("leave"), x.getBoolean("future"))
+                },
+                work = o.optJSONObject("work")?.takeIf { it.optBoolean("tasks_known") }?.let { w ->
+                    val byDay = w.getJSONObject("meeting_by_day")
+                    Work(
+                        meetingHours = w.getDouble("meeting_hours"),
+                        productiveHours = w.getDouble("productive_hours"),
+                        meetingByDay = byDay.keys().asSequence().associateWith { byDay.getDouble(it) },
+                    )
                 },
                 lastGoodAt = f.optString("last_good_at").takeIf { it.isNotEmpty() && it != "null" }?.let(OffsetDateTime::parse),
                 lastOk = if (f.isNull("last_ok")) null else f.getBoolean("last_ok"),

@@ -44,12 +44,13 @@ export interface Prefs {
   tds_pct: number;
   target_net_inr: number;
   work_days: number[];
-  day_start: string;
-  day_end: string;
   max_hours_per_day: number;
   leaves: string[];
   tz: string;
   nudges: boolean;
+  nudge_from: string;
+  nudge_until: string;
+  meeting_pattern: string;
 }
 
 export interface FetchState {
@@ -79,11 +80,25 @@ export interface HistoryMonth {
   target_hours: number;
   working_days: number;
   days_tracked: number;
+  meeting_hours: number;
+  meeting_share: number | null;
   current: boolean;
+}
+
+/** Meetings and productive work for the month shown (plan.work_split). */
+export interface Work {
+  meeting_hours: number;
+  productive_hours: number;
+  meeting_share: number | null;
+  meeting_by_day: Record<string, number>;
+  tasks: { task: string; project: string; hours: number; meeting: boolean }[];
+  /** False until the worker has read task time at all. */
+  tasks_known: boolean;
 }
 
 export interface Summary {
   plan: Plan;
+  work: Work;
   history: HistoryMonth[];
   prefs: Prefs;
   fetch: FetchState;

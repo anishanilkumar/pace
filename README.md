@@ -4,10 +4,12 @@ Freelance hours against a monthly target, with a nudge when they slip.
 
 Set a target in rupees after TDS. Pace turns it into hours from your rate,
 the exchange rate and the TDS rate. It reads what you've tracked in Time
-Doctor Classic every 20 minutes during working hours, and tells you where
-you stand: today's quota, how far ahead of or behind the month's plan you
-are, and what's left. When you're working less than the target needs, the
-Android app gets a notification.
+Doctor Classic every 20 minutes through the day, and tells you where you
+stand: today's quota, how far ahead of or behind the month's plan you are,
+what's left, and how much of the time went to meetings rather than
+productive work. Hours are flexible: there are working days, but no working
+hours. When you're working less than the target needs, the Android app gets
+a notification.
 
 It replaces an older dashboard that needed a CSV export by hand; the Time
 Doctor API it was meant to use no longer answers.
@@ -43,6 +45,17 @@ Time Doctor changes them, a failed read saves a screenshot in
 `PACE_DEBUG_DIR`, and the app says it can't read Time Doctor rather than
 showing stale numbers as fresh.
 
+**Meetings and work** come from the Projects report, which has time per task
+per day. Its page POSTs a form (every project id, your user id, a CSRF token
+from the page, the dates) to `/v2/content/projectsReport/renderProjectsReport.php`
+and gets JSON with `tasks[].entries[{date, workedTime}]`. The worker opens the
+page, takes that request, and sends it again with its own dates. A task
+whose name matches the meeting rule (Settings; whole words such as meeting,
+standup, call, sync) is a meeting; everything else is productive work.
+
+**History:** the first read backfills the last six whole months of hours and
+task time, once.
+
 **Fallback:** in Settings, upload a worklog CSV exported from Time Doctor
 (Reports, Worklog, CSV). The days in the file replace what's stored.
 
@@ -50,25 +63,28 @@ showing stale numbers as fresh.
 
 - **Target hours** = target ÷ (rate × USD→INR × (1 − TDS)).
 - **Even plan**: target hours spread over the month's working days (your
-  weekdays, minus leave). "Behind" compares hours worked with where that plan
-  should be by now, counting today's share of the working window.
+  weekdays, minus leave). "Behind" compares hours worked with what the plan
+  asked of the days already finished. There is no clock: today owes nothing
+  until it's over, and every hour worked today counts at once.
 - **Today's quota**: what's left of the target before today, spread over the
   working days left including today. It holds steady all day.
 - **Out of reach** (the one red state): the quota is over your most-hours-a-day.
 - **Projection**: the average of finished working days, carried forward.
   None until a day has finished.
+- **Meetings / productive**: the month's task time split by the meeting rule,
+  with the tasks listed so a wrong verdict is easy to spot.
 
 ## Nudges (`backend/pace/nudges.py`)
 
-On working days, inside the working window, each at most once:
+Only inside the nudge hours (Settings, default 09:00–21:00: when a
+notification is welcome, not when you work), on working days, each at most
+once:
 
 | Nudge | When |
 |---|---|
-| Month behind | first 2 h of the day, if finished days are behind the plan |
-| Not started | 90 min in, under 15 min tracked |
-| Nothing tracked since… | today started, not done, no growth for 75 min (once per idle stretch) |
-| Behind today | past the middle of the window, under 45 % of the quota |
-| N left for today | from 2 h before the window ends |
+| Month behind | first 2 h, if finished days are behind the plan |
+| Nothing tracked today yet | from the middle of the nudge hours, under 15 min tracked |
+| N left for today | the last 3 h of the nudge hours |
 | Today's quota done / target reached | when it happens |
 | Can't read Time Doctor | no good read for 3 h; replaces all others, which would quote old numbers |
 

@@ -4,6 +4,8 @@ import { clock, rupees } from "../format";
 import type { Prefs } from "../types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// The server's default (plan.DEFAULT_MEETING_PATTERN), to get back to after an edit.
+const DEFAULT_MEETING_PATTERN = String.raw`\b(meetings?|stand-?ups?|calls?|sync|retro(spective)?|interviews?|1:1|demo)\b`;
 
 export function Settings({ prefs, onSaved, onBack }: {
   prefs: Prefs;
@@ -86,10 +88,6 @@ export function Settings({ prefs, onSaved, onBack }: {
           })}
         </div>
         <div className="form-grid">
-          <label className="field"><span>Day starts</span>
-            <input type="time" value={p.day_start} onChange={(e) => set("day_start", e.target.value)} /></label>
-          <label className="field"><span>Day ends</span>
-            <input type="time" value={p.day_end} onChange={(e) => set("day_end", e.target.value)} /></label>
           <label className="field"><span>Most hours in a day</span>
             <input type="number" inputMode="decimal" step="0.5" min="1" max="24" value={p.max_hours_per_day} onChange={num("max_hours_per_day")} /></label>
           <label className="field"><span>Time zone</span>
@@ -126,10 +124,31 @@ export function Settings({ prefs, onSaved, onBack }: {
         <button type="button" className="tick" aria-pressed={p.nudges} onClick={() => set("nudges", !p.nudges)}>
           {p.nudges ? "On" : "Off"}
         </button>
-        <div className="field-note">
-          Sent to the Android app: a slow start, an hour and a quarter with nothing tracked, a short
-          afternoon, what's left in the evening, and when Time Doctor can't be read.
+        <div className="form-grid">
+          <label className="field"><span>Nudge from</span>
+            <input type="time" value={p.nudge_from} onChange={(e) => set("nudge_from", e.target.value)} /></label>
+          <label className="field"><span>Nudge until</span>
+            <input type="time" value={p.nudge_until} onChange={(e) => set("nudge_until", e.target.value)} /></label>
         </div>
+        <div className="field-note">
+          Not working hours: when a notification is welcome. Sent to the Android app: the month behind
+          in the morning, nothing tracked by the middle of this stretch, what's left in its last three
+          hours, and when Time Doctor can't be read.
+        </div>
+      </section>
+
+      <section className="instrument form">
+        <div className="label">Meetings</div>
+        <label className="field"><span>A task is a meeting when its name matches</span>
+          <input type="text" value={p.meeting_pattern} spellCheck={false} autoCapitalize="off"
+            onChange={(e) => set("meeting_pattern", e.target.value)} /></label>
+        <div className="field-note">
+          A regular expression, case ignored; \b marks a word edge, so "meeting" matches "Engineering
+          Meeting" but "call" doesn't match "Recall". Everything else counts as productive work.
+          The dashboard lists the month's tasks with their verdict.
+        </div>
+        <button className="btn btn-quiet" type="button" style={{ alignSelf: "flex-start" }}
+          onClick={() => set("meeting_pattern", DEFAULT_MEETING_PATTERN)}>Default rule</button>
       </section>
 
       <div className="form-actions">

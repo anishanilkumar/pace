@@ -87,9 +87,49 @@ def test_streak_skips_days_off_and_waits_for_today():
 
 def test_prefs_validation():
     with pytest.raises(ValidationError):
-        Prefs(day_start="18:00", day_end="09:00")
+        Prefs(nudge_from="21:00", nudge_until="09:00")
+    with pytest.raises(ValidationError):
+        Prefs(meeting_pattern="(unclosed")
+    # Prefs saved before flexible hours still load; the old window is ignored.
+    assert Prefs.model_validate({"day_start": "09:00", "day_end": "19:00", "tds_pct": 5}).tds_pct == 5
     with pytest.raises(ValidationError):
         Prefs(tz="Mars/Olympus")
     with pytest.raises(ValidationError):
         Prefs(work_days=[7])
     assert Prefs(leaves=["2026-10-02", "2026-10-02"]).leaves == ["2026-10-02"]
+
+
+def test_behind_counts_finished_days_and_today_helps_at_once():
+    hours = {date(2026, 10, d): 4.0 for d in (1, 2, 5, 6, 7, 8, 9, 12, 13)}
+    morning = month_plan(PREFS, hours, at("2026-10-14", "06:00"))
+    night = month_plan(PREFS, hours, at("2026-10-14", "23:00"))
+    # No clock: the same verdict at 06:00 and 23:00 with nothing done today.
+    assert morning["diff_hours"] == night["diff_hours"]
+    worked = month_plan(PREFS, {**hours, date(2026, 10, 14): 3.0}, at("2026-10-14", "10:00"))
+    assert worked["diff_hours"] == pytest.approx(morning["diff_hours"] + 3)
+
+
+def test_meeting_rule_is_whole_words():
+    assert PREFS.is_meeting("Engineering Meeting")
+    assert PREFS.is_meeting("Meeting - Daily Standup")
+    assert PREFS.is_meeting("Call with Nijo on Enrollment")
+    assert not PREFS.is_meeting("Implement Juanita's changes")
+    assert not PREFS.is_meeting("Recall the cache keys")
+
+
+def test_work_split():
+    from pace.plan import work_split
+
+    rows = [
+        (date(2026, 10, 1), "Engineering Meeting", "TAI", 3600),
+        (date(2026, 10, 1), "Foundational certificate issue", "TAI", 7200),
+        (date(2026, 10, 2), "Meeting - Daily Standup", "TAI", 900),
+        (date(2026, 9, 30), "Engineering Meeting", "TAI", 3600),  # outside the month
+    ]
+    s = work_split(PREFS, rows, date(2026, 10, 1), date(2026, 10, 31))
+    assert s["meeting_hours"] == pytest.approx(1.25)
+    assert s["productive_hours"] == pytest.approx(2)
+    assert s["meeting_share"] == pytest.approx(1.25 / 3.25)
+    assert s["meeting_by_day"] == {"2026-10-01": 1.0, "2026-10-02": 0.25}
+    assert s["tasks"][0] == {"task": "Foundational certificate issue", "project": "TAI", "hours": 2.0, "meeting": False}
+    assert work_split(PREFS, [], date(2026, 10, 1), date(2026, 10, 31))["meeting_share"] is None

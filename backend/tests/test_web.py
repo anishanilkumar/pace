@@ -36,7 +36,7 @@ def test_prefs_round_trip_and_validation():
     r = c.put("/api/prefs", json=prefs, headers=H)
     assert r.status_code == 200
     assert r.json()["prefs"]["target_net_inr"] == 200000
-    prefs["day_end"] = "08:00"
+    prefs["nudge_until"] = "08:00"
     assert c.put("/api/prefs", json=prefs, headers=H).status_code == 422
 
 
@@ -58,13 +58,11 @@ def test_nudge_feed_is_at_most_once():
     assert client().get(f"/api/nudges?after={r['latest']}").json()["nudges"] == []
 
 
-def test_idle_detection_from_samples():
+def test_task_time_is_replaced_per_range():
     d = date(2026, 10, 27)
-    t = lambda h, m: datetime(2026, 10, 27, h, m, tzinfo=timezone.utc)  # noqa: E731
-    worker.ingest({d: 3600}, t(9, 0), live=True)
-    worker.ingest({d: 5400}, t(9, 30), live=True)
-    worker.ingest({d: 5400}, t(10, 0), live=True)
-    assert db.last_change(d) == t(9, 30)
+    db.put_tasks(d, d, [(d, "1", "Engineering Meeting", "TAI", 3600), (d, "2", "Build", "TAI", 1800)])
+    db.put_tasks(d, d, [(d, "2", "Build", "TAI", 2400)])
+    assert db.tasks(d, d) == [(d, "Build", "TAI", 2400)]
 
 
 def test_backfill_reads_six_months_once():
@@ -87,11 +85,16 @@ def test_backfill_reads_six_months_once():
 
 def test_summary_has_history():
     today = datetime.now(db.get_prefs().zone).date()
-    worker.ingest({today.replace(day=1): 7200}, datetime.now(timezone.utc), live=False)
+    worker.ingest({today.replace(day=1): 7200})
+    db.put_tasks(today.replace(day=1), today, [(today.replace(day=1), "1", "Engineering Meeting", "TAI", 1800)])
     h = client().get("/api/summary").json()["history"]
     assert len(h) == 7
     assert h[-1]["current"] is True
     assert h[-1]["hours"] >= 2
+    assert h[-1]["meeting_hours"] == 0.5
+    work = client().get("/api/summary").json()["work"]
+    assert work["tasks_known"] is True
+    assert work["tasks"][0]["meeting"] is True
 
 
 def test_fetch_span_rereads_last_month_early_on():

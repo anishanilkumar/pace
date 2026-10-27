@@ -99,6 +99,7 @@ export function App() {
       ) : (
         <Dashboard
           plan={summary.plan}
+          work={summary.work}
           prefs={summary.prefs}
           fetch={summary.fetch}
           nudges={summary.nudges}

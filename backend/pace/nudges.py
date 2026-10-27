@@ -4,24 +4,25 @@ Each nudge has a key that names its occasion ("evening:2026-10-27"), and the
 database keeps a key once, so running these rules after every fetch sends each
 nudge at most once however often the worker runs.
 
-The rules, on working days, inside the working window (W = day_start..day_end):
+Hours are flexible, so nothing here assumes when work happens. The rules only
+need to know when a notification is welcome (N = nudge_from..nudge_until) and
+whether today is a working day:
 
-=========  ===================================  ==================================
-key        when                                 if
-=========  ===================================  ==================================
-month      first 2 h of W                       finished days are behind the even plan
-start      from W start + 90 min                under 15 min tracked today
-idle       inside W, until 30 min before end    today has started, isn't done, and
-                                                hasn't grown for 75 min
-midday     from the middle of W                 under 45 % of today's quota
-evening    from 2 h before W ends, to 1 h after at least 30 min of quota left
-done       any time                             today's quota met (once a day)
-target     any time                             the month's target met (once)
-stale      inside W                             no good read of Time Doctor for 3 h
-=========  ===================================  ==================================
+=========  ====================================  =================================
+key        when, inside N                        if
+=========  ====================================  =================================
+month      first 2 h                             finished days are behind the plan,
+                                                 or the target is out of reach
+start      from the middle                       under 15 min tracked today
+evening    last 3 h                              at least 30 min of quota left
+done       any time                              today's quota met
+target     any time                              the month's target met (once)
+stale      any time, working days                no good read of Time Doctor for 3 h
+=========  ====================================  =================================
 
 When the hours are stale only the stale nudge goes out: the others would
-quote numbers that may be wrong ("the display never lies").
+quote numbers that may be wrong ("the display never lies"). Nothing at all
+is sent outside N.
 
 Copy is terse and plain, in the house voice: no exclamation marks, no emoji.
 """
@@ -34,7 +35,6 @@ from datetime import date, datetime, timedelta
 from .plan import Prefs, month_plan
 
 STALE_AFTER = timedelta(hours=3)
-IDLE_AFTER = timedelta(minutes=75)
 
 
 @dataclass(frozen=True)
@@ -57,22 +57,17 @@ def _clock(t: datetime, prefs: Prefs) -> str:
     return t.astimezone(prefs.zone).strftime("%H:%M")
 
 
-def evaluate(
-    prefs: Prefs,
-    hours: dict[date, float],
-    now: datetime,
-    last_change: datetime | None,
-    last_good: datetime | None,
-) -> list[Nudge]:
+def evaluate(prefs: Prefs, hours: dict[date, float], now: datetime, last_good: datetime | None) -> list[Nudge]:
     if not prefs.nudges:
         return []
     now = now.astimezone(prefs.zone)
     today = now.date()
-    start, end = prefs.window(today)
-    in_window = start <= now <= end
+    start, end = prefs.nudge_window(today)
+    if not start <= now <= end:
+        return []
     month_name = today.strftime("%B")
 
-    if in_window and prefs.is_working(today) and (last_good is None or now - last_good > STALE_AFTER):
+    if prefs.is_working(today) and (last_good is None or now - last_good > STALE_AFTER):
         since = f"since {_clock(last_good, prefs)}" if last_good and last_good.astimezone(prefs.zone).date() == today else "today"
         return [Nudge(
             f"stale:{today}", "warn", "Can't read Time Doctor",
@@ -94,7 +89,7 @@ def evaluate(
     if not prefs.is_working(today) or p["status"] == "done":
         return out
 
-    if start <= now < start + timedelta(hours=2):
+    if now < start + timedelta(hours=2):
         if p["status"] == "out_of_reach":
             out.append(Nudge(
                 f"month:{today}", "alert", f"{month_name}'s target is out of reach",
@@ -110,23 +105,11 @@ def evaluate(
     if left <= 0:
         return out
 
-    if now >= start + timedelta(minutes=90) and done < 0.25 and now <= end:
-        out.append(Nudge(f"start:{today}", "warn", "Not started yet",
-                         f"Today needs {fmt_h(quota)}. The day's window closes at {prefs.day_end}."))
+    if now >= start + (end - start) / 2 and done < 0.25:
+        out.append(Nudge(f"start:{today}", "warn", "Nothing tracked today yet",
+                         f"Today needs {fmt_h(quota)}."))
 
-    if (done >= 0.25 and last_change is not None and start <= now <= end - timedelta(minutes=30)
-            and now - last_change >= IDLE_AFTER):
-        out.append(Nudge(
-            f"idle:{today}:{last_change.astimezone(prefs.zone).strftime('%H%M')}", "warn",
-            f"Nothing tracked since {_clock(last_change, prefs)}",
-            f"{fmt_h(left)} left for today.",
-        ))
-
-    if now >= start + (end - start) / 2 and now <= end and done < 0.45 * quota and done >= 0.25:
-        out.append(Nudge(f"midday:{today}", "warn", "Behind today",
-                         f"{fmt_h(done)} of {fmt_h(quota)} done, and half the day has gone."))
-
-    if end - timedelta(hours=2) <= now <= end + timedelta(hours=1) and left >= 0.5:
+    if now >= end - timedelta(hours=3) and left >= 0.5:
         out.append(Nudge(f"evening:{today}", "warn", f"{fmt_h(left)} left for today",
                          f"Today's quota is {fmt_h(quota)}; {fmt_h(done)} done."))
     return out

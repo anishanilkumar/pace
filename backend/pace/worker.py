@@ -5,10 +5,13 @@ app so a headless Chromium never shares memory or a crash with the API. The
 web app asks for an early fetch through the database (db.request_fetch); the
 worker looks for that every 30 seconds.
 
-Cadence: every PACE_FETCH_EVERY_MIN (20) from an hour before the working
-window to an hour after it on working days, PACE_FETCH_IDLE_EVERY_MIN (120)
-otherwise, so a weekend session still shows up without the browser running
-all night.
+Cadence: hours are flexible, so the same every day: every
+PACE_FETCH_EVERY_MIN (20) from an hour before the nudge window to an hour
+after it, PACE_FETCH_IDLE_EVERY_MIN (120) through the night, so late work
+still shows up without the browser running every 20 minutes till morning.
+
+Each read takes the hours (timesheet) and the time per task (projects
+report, for meetings and work) for the same span.
 """
 
 from __future__ import annotations
@@ -67,12 +70,9 @@ def backfill_spans(today: date, done_from: date | None) -> list[tuple[date, date
     return spans
 
 
-def ingest(seconds: dict[date, int], now: datetime, live: bool) -> None:
-    """Store a read. A live read also records today's running total for idle detection."""
+def ingest(seconds: dict[date, int]) -> None:
+    """Store a read of the hours."""
     db.put_days(seconds)
-    today = now.astimezone(db.get_prefs().zone).date()
-    if live and today in seconds:
-        db.add_sample(now, today, seconds[today])
 
 
 def run_nudges(now: datetime) -> list[int]:
@@ -82,7 +82,7 @@ def run_nudges(now: datetime) -> list[int]:
     last_good = datetime.fromisoformat(good["finished_at"]) if good else None
     hours = db.hours(today.replace(day=1) - timedelta(days=120), today)
     made = []
-    for n in nudges.evaluate(prefs, hours, now, db.last_change(today), last_good):
+    for n in nudges.evaluate(prefs, hours, now, last_good):
         nid = db.add_nudge(n.key, n.level, n.title, n.body)
         if nid is not None:
             log.info("nudge %s: %s", n.key, n.title)
@@ -97,9 +97,15 @@ async def fetch_once(headed: bool = False) -> None:
     start, end = fetch_span(today)
     done = db.get_kv("backfilled_from")
     history = backfill_spans(today, date.fromisoformat(done) if done else None)
+    # Task time has its own backfill mark: it came later than the hours, so
+    # a server that had already backfilled hours still needs six months of
+    # tasks once. One request covers the whole span.
+    oldest = month_start(today, HISTORY_MONTHS)
+    tasks_from = db.get_kv("tasks_backfilled_from")
+    task_start = oldest if not tasks_from or date.fromisoformat(tasks_from) > oldest else start
     fid = db.fetch_started("browser")
     try:
-        seconds = await fetch_spans(history + [(start, end)], headed=headed)
+        seconds, tasks = await fetch_spans(history + [(start, end)], (task_start, end), headed=headed)
     except FetchError as e:
         log.warning("fetch failed: %s", e)
         db.fetch_finished(fid, str(e))
@@ -107,10 +113,15 @@ async def fetch_once(headed: bool = False) -> None:
         log.exception("fetch crashed")
         db.fetch_finished(fid, f"{type(e).__name__}: {e}")
     else:
-        ingest(seconds, datetime.now(timezone.utc), live=True)
+        ingest(seconds)
         if history:
             db.set_kv("backfilled_from", history[0][0].isoformat())
             log.info("backfilled %s..%s", history[0][0], history[-1][1])
+        if tasks is not None:
+            db.put_tasks(task_start, end, tasks)
+            if task_start == oldest:
+                db.set_kv("tasks_backfilled_from", oldest.isoformat())
+                log.info("task time backfilled from %s", oldest)
         db.fetch_finished(fid)
         log.info("fetched %s..%s: %.2f h today", start, end, seconds.get(end, 0) / 3600)
     run_nudges(datetime.now(timezone.utc))
@@ -119,8 +130,8 @@ async def fetch_once(headed: bool = False) -> None:
 def due_every(now: datetime) -> timedelta:
     s, prefs = settings(), db.get_prefs()
     local = now.astimezone(prefs.zone)
-    start, end = prefs.window(local.date())
-    busy = prefs.is_working(local.date()) and start - timedelta(hours=1) <= local <= end + timedelta(hours=1)
+    start, end = prefs.nudge_window(local.date())
+    busy = start - timedelta(hours=1) <= local <= end + timedelta(hours=1)
     return timedelta(minutes=s.fetch_every_min if busy else s.fetch_idle_every_min)
 
 

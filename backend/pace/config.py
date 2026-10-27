@@ -40,7 +40,7 @@ class Settings:
     # Screenshots and page HTML of a failed fetch go here, so a change on
     # Time Doctor's side can be seen rather than guessed at. Empty: off.
     debug_dir: str
-    # Minutes between fetches inside the working window, and outside it.
+    # Minutes between fetches through the day (around the nudge hours), and overnight.
     fetch_every_min: int
     fetch_idle_every_min: int
 

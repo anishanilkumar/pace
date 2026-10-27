@@ -39,7 +39,9 @@ class LogicTest {
           "per_day_after_today": 5.0, "working_days": 20, "working_days_left": 3, "projected_hours": null,
           "projected_net": null, "streak": 1,
           "days": [{"date": "2026-10-01", "hours": 4.0, "working": true, "leave": false, "future": false}]},
-         "prefs": {"max_hours_per_day": 10, "day_end": "19:00"},
+         "prefs": {"max_hours_per_day": 10, "nudge_from": "09:00", "nudge_until": "21:00"},
+         "work": {"meeting_hours": 1.5, "productive_hours": 3.0, "meeting_share": 0.333,
+           "meeting_by_day": {"2026-10-01": 1.5}, "tasks": [], "tasks_known": true},
          "fetch": {"last_at": "2026-10-27T08:00:00+00:00", "last_ok": true, "last_error": null,
            "last_good_at": "2026-10-27T08:00:00+00:00", "last_good_source": "browser", "failures": 0, "requested": false},
          "nudges": [{"id": 3, "key": "evening:2026-10-27", "level": "warn", "title": "t", "body": "b",
@@ -55,6 +57,15 @@ class LogicTest {
         assertNull(s.lastError)
         assertEquals(1, s.nudges.size)
         assertEquals(1, s.days.size)
+        assertEquals(1.5, s.work!!.meetingByDay["2026-10-01"]!!, 1e-9)
+    }
+
+    @Test fun noWorkUntilTasksKnown() {
+        val o = JSONObject(json)
+        o.getJSONObject("work").put("tasks_known", false)
+        assertNull(Summary.parse(o).work)
+        o.remove("work")
+        assertNull(Summary.parse(o).work)
     }
 
     @Test fun staleAfterAnHour() {
