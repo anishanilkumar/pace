@@ -1,18 +1,20 @@
 import { DayChart } from "../components/DayChart";
 import { Ticks } from "../components/Ticks";
 import { ageMin, clock, monthName, rupees, span, stamp } from "../format";
-import type { FetchState, NudgeItem, Plan, Prefs } from "../types";
+import type { FetchState, HistoryMonth, NudgeItem, Plan, Prefs } from "../types";
 
 /** Hours older than this are shown as stale: dimmed, with their age. */
 export const STALE_MIN = 60;
 
-export function Dashboard({ plan, prefs, fetch, nudges, month, onMonth, onOpenSettings }: {
+export function Dashboard({ plan, prefs, fetch, nudges, history, month, onMonth, onOpenMonth, onOpenSettings }: {
   plan: Plan;
   prefs: Prefs;
   fetch: FetchState;
   nudges: NudgeItem[];
+  history: HistoryMonth[];
   month: string;
   onMonth: (by: number) => void;
+  onOpenMonth: (month: string) => void;
   onOpenSettings: () => void;
 }) {
   const current = plan.today !== null;
@@ -24,7 +26,46 @@ export function Dashboard({ plan, prefs, fetch, nudges, month, onMonth, onOpenSe
       <Verdict plan={plan} prefs={prefs} />
       <Month plan={plan} month={month} onMonth={onMonth} />
       {nudges.length > 0 && current && <Nudges nudges={nudges} />}
+      {history.length > 0 && <History months={history} shown={month} onOpen={onOpenMonth} />}
     </div>
+  );
+}
+
+/**
+ * The last six months and this one, as rows of ticks against the target:
+ * one tick per 2.5 % of it, lit up to the hours worked. A row opens that month.
+ * Money is at today's rate; past rates aren't recorded.
+ */
+function History({ months, shown, onOpen }: { months: HistoryMonth[]; shown: string; onOpen: (m: string) => void }) {
+  const N = 40;
+  return (
+    <section className="instrument">
+      <div className="section-head">
+        <div className="label">Last 6 months</div>
+        <span className="stamp">AT TODAY'S RATE</span>
+      </div>
+      <ul className="history">
+        {[...months].reverse().map((m) => {
+          const per = m.target_hours / N;
+          const lit = per > 0 ? Math.floor(m.hours / per) : 0;
+          const met = m.hours >= m.target_hours;
+          return (
+            <li key={m.month}>
+              <button className={`history-row${m.month === shown ? " history-shown" : ""}`} onClick={() => onOpen(m.month)}>
+                <span className="history-name">
+                  {monthName(m.month).slice(0, 3)} <span className="stamp">{m.month.slice(0, 4)}</span>
+                </span>
+                <Ticks className={met ? "" : "ticks-short"} total={N} lit={Math.min(lit, N)} />
+                <span className="history-figures">
+                  <span className="history-hours">{clock(m.hours)}</span>
+                  <span className="stamp">{m.days_tracked ? rupees(m.net) : "No time"}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -130,11 +171,16 @@ function Month({ plan, month, onMonth }: { plan: Plan; month: string; onMonth: (
       <Ticks className="ticks-month" total={N} lit={lit} warn={Math.max(0, expectedTicks - lit)} />
       <div className="facts">
         <Fact label="Hours" value={`${clock(plan.worked_hours)} / ${clock(plan.target_hours)}`} />
-        <Fact
-          label="Projected"
-          value={plan.projected_net === null ? "Too early" : rupees(plan.projected_net)}
-          estimated={plan.projected_net !== null}
-        />
+        {plan.today !== null ? (
+          <Fact
+            label="Projected"
+            value={plan.projected_net === null ? "Too early" : rupees(plan.projected_net)}
+            estimated={plan.projected_net !== null}
+          />
+        ) : (
+          // A finished month has nothing left to project.
+          <Fact label="Final" value={rupees(plan.worked_net)} />
+        )}
         <Fact label="Streak" value={`${plan.streak} ${plan.streak === 1 ? "day" : "days"}`} />
         <Fact label="Net an hour" value={rupees(plan.net_per_hour)} />
         <Fact label="Gross" value={rupees(plan.worked_gross)} />

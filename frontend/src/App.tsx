@@ -71,7 +71,10 @@ export function App() {
   return (
     <main className="page">
       <header className="topbar">
-        <span className="wordmark">Pace</span>
+        {/* Home: the dashboard, on this month. */}
+        <button className="wordmark wordmark-home" onClick={() => { setMonth(null); go("dashboard"); }} aria-label="Pace, home">
+          Pace
+        </button>
         <div className="topbar-right">
           {summary && <FetchPill fetch={summary.fetch} offline={failed === "Offline"} onClick={fetchNow} />}
           {view === "dashboard" && <button className="pill" onClick={() => go("settings")}>Settings</button>}
@@ -99,8 +102,13 @@ export function App() {
           prefs={summary.prefs}
           fetch={summary.fetch}
           nudges={summary.nudges}
+          history={summary.history}
           month={summary.plan.month}
           onMonth={(by) => { const m = shiftMonth(summary.plan.month, by); setMonth(m); }}
+          onOpenMonth={(m) => {
+            setMonth(summary.history.find((h) => h.month === m)?.current ? null : m);
+            window.scrollTo(0, 0);
+          }}
           onOpenSettings={() => go("settings")}
         />
       )}

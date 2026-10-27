@@ -263,6 +263,14 @@ async def _save_debug(page, what: str) -> None:
 
 async def fetch_range(start: date, end: date, headed: bool = False) -> dict[date, int]:
     """Seconds per day for start..end (inclusive), every day present."""
+    return await fetch_spans([(start, end)], headed=headed)
+
+
+async def fetch_spans(spans: list[tuple[date, date]], headed: bool = False) -> dict[date, int]:
+    """Several ranges in one browser session (the backfill reads a month at a time).
+
+    Every day of every range is present, 0 where nothing was tracked.
+    """
     from playwright.async_api import async_playwright
 
     if not settings().td_base_url:
@@ -277,18 +285,25 @@ async def fetch_range(start: date, end: date, headed: bool = False) -> dict[date
                 locale="en-US",
             )
             page = await context.new_page()
-            try:
-                found = await _timesheet(page, start, end)
-            except _NotSignedIn:
-                # The saved cookies have run out (or there were none).
-                await _login(page)
+            out: dict[date, int] = {}
+            signed_in = False
+            for start, end in spans:
                 try:
                     found = await _timesheet(page, start, end)
                 except _NotSignedIn:
-                    raise FetchError("Signed in, but the timesheet still says not signed in.")
-                await context.storage_state(path=state)
-                os.chmod(state, 0o600)
-            return cover(found, start, end)
+                    if signed_in:
+                        raise FetchError("Signed in, but the timesheet still says not signed in.")
+                    # The saved cookies have run out (or there were none).
+                    await _login(page)
+                    signed_in = True
+                    try:
+                        found = await _timesheet(page, start, end)
+                    except _NotSignedIn:
+                        raise FetchError("Signed in, but the timesheet still says not signed in.")
+                    await context.storage_state(path=state)
+                    os.chmod(state, 0o600)
+                out.update(cover(found, start, end))
+            return out
         except FetchError:
             await _save_debug(page, "failed")
             raise

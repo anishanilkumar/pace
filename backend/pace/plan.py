@@ -207,6 +207,31 @@ def month_plan(prefs: Prefs, hours: dict[date, float], now: datetime, month: tup
     }
 
 
+def history(prefs: Prefs, hours: dict[date, float], today: date, months: int) -> list[dict]:
+    """The last `months` whole months and this one, oldest first.
+
+    Money is at today's rate, exchange rate and TDS: past rates aren't
+    recorded, so an older month's rupees are what its hours are worth now.
+    The target is today's too: the same for every month.
+    """
+    out = []
+    for back in range(months, -1, -1):
+        i = today.year * 12 + today.month - 1 - back
+        year, mon = i // 12, i % 12 + 1
+        days = month_days(year, mon)
+        worked = sum(hours.get(d, 0.0) for d in days)
+        out.append({
+            "month": f"{year:04d}-{mon:02d}",
+            "hours": worked,
+            "net": worked * prefs.net_per_hour,
+            "target_hours": prefs.target_hours,
+            "working_days": sum(1 for d in days if prefs.is_working(d)),
+            "days_tracked": sum(1 for d in days if hours.get(d, 0.0) > 0),
+            "current": back == 0,
+        })
+    return out
+
+
 def streak(prefs: Prefs, hours: dict[date, float], today: date, per_day: float) -> int:
     """Working days in a row that met the even plan, back from yesterday.
 

@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from . import db, nudges
 from .config import settings
-from .timedoctor import FetchError, fetch_range
+from .timedoctor import FetchError, fetch_spans
 
 log = logging.getLogger(__name__)
 TICK = 30
@@ -36,6 +36,35 @@ def fetch_span(today: date) -> tuple[date, date]:
     if today.day <= 3:
         first = (first - timedelta(days=1)).replace(day=1)
     return first, today
+
+
+# Months of history kept for the dashboard's "last 6 months" and the month
+# browser, read once and then left alone (finished months don't change).
+HISTORY_MONTHS = 6
+
+
+def month_start(d: date, back: int) -> date:
+    """The first day of the month `back` months before d's."""
+    i = d.year * 12 + d.month - 1 - back
+    return date(i // 12, i % 12 + 1, 1)
+
+
+def backfill_spans(today: date, done_from: date | None) -> list[tuple[date, date]]:
+    """Whole months to read once, a month per request, before the regular span.
+
+    `done_from` is how far back an earlier backfill already reached; only
+    the months before it are read.
+    """
+    oldest = month_start(today, HISTORY_MONTHS)
+    regular_start = fetch_span(today)[0]
+    upto = min(regular_start, done_from) if done_from else regular_start
+    spans = []
+    m = oldest
+    while m < upto:
+        nxt = month_start(m, -1)
+        spans.append((m, min(nxt, upto) - timedelta(days=1)))
+        m = nxt
+    return spans
 
 
 def ingest(seconds: dict[date, int], now: datetime, live: bool) -> None:
@@ -64,10 +93,13 @@ def run_nudges(now: datetime) -> list[int]:
 async def fetch_once(headed: bool = False) -> None:
     prefs = db.get_prefs()
     now = datetime.now(timezone.utc)
-    start, end = fetch_span(now.astimezone(prefs.zone).date())
+    today = now.astimezone(prefs.zone).date()
+    start, end = fetch_span(today)
+    done = db.get_kv("backfilled_from")
+    history = backfill_spans(today, date.fromisoformat(done) if done else None)
     fid = db.fetch_started("browser")
     try:
-        seconds = await fetch_range(start, end, headed=headed)
+        seconds = await fetch_spans(history + [(start, end)], headed=headed)
     except FetchError as e:
         log.warning("fetch failed: %s", e)
         db.fetch_finished(fid, str(e))
@@ -76,6 +108,9 @@ async def fetch_once(headed: bool = False) -> None:
         db.fetch_finished(fid, f"{type(e).__name__}: {e}")
     else:
         ingest(seconds, datetime.now(timezone.utc), live=True)
+        if history:
+            db.set_kv("backfilled_from", history[0][0].isoformat())
+            log.info("backfilled %s..%s", history[0][0], history[-1][1])
         db.fetch_finished(fid)
         log.info("fetched %s..%s: %.2f h today", start, end, seconds.get(end, 0) / 3600)
     run_nudges(datetime.now(timezone.utc))

@@ -71,8 +71,20 @@ export interface NudgeItem {
   created_at: string;
 }
 
+/** One month of /api/summary's history; money at today's rate (plan.history). */
+export interface HistoryMonth {
+  month: string;
+  hours: number;
+  net: number;
+  target_hours: number;
+  working_days: number;
+  days_tracked: number;
+  current: boolean;
+}
+
 export interface Summary {
   plan: Plan;
+  history: HistoryMonth[];
   prefs: Prefs;
   fetch: FetchState;
   nudges: NudgeItem[];

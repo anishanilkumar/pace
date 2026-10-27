@@ -67,6 +67,33 @@ def test_idle_detection_from_samples():
     assert db.last_change(d) == t(9, 30)
 
 
+def test_backfill_reads_six_months_once():
+    today = date(2026, 10, 27)
+    spans = worker.backfill_spans(today, None)
+    assert spans[0] == (date(2026, 4, 1), date(2026, 4, 30))
+    assert spans[-1] == (date(2026, 9, 1), date(2026, 9, 30))
+    assert len(spans) == 6
+    # Done already: nothing more to read.
+    assert worker.backfill_spans(today, date(2026, 4, 1)) == []
+    # A month on, the window moves forward over data already read.
+    assert worker.backfill_spans(date(2026, 11, 20), date(2026, 4, 1)) == []
+    # A deeper window (or a first backfill that reached less far) reads only the gap.
+    assert worker.backfill_spans(today, date(2026, 6, 1)) == [
+        (date(2026, 4, 1), date(2026, 4, 30)), (date(2026, 5, 1), date(2026, 5, 31))]
+    # Early in a month the regular span covers last month, so it isn't backfilled.
+    early = worker.backfill_spans(date(2026, 11, 2), None)
+    assert early[-1] == (date(2026, 9, 1), date(2026, 9, 30))
+
+
+def test_summary_has_history():
+    today = datetime.now(db.get_prefs().zone).date()
+    worker.ingest({today.replace(day=1): 7200}, datetime.now(timezone.utc), live=False)
+    h = client().get("/api/summary").json()["history"]
+    assert len(h) == 7
+    assert h[-1]["current"] is True
+    assert h[-1]["hours"] >= 2
+
+
 def test_fetch_span_rereads_last_month_early_on():
     assert worker.fetch_span(date(2026, 11, 2)) == (date(2026, 10, 1), date(2026, 11, 2))
     assert worker.fetch_span(date(2026, 11, 4)) == (date(2026, 11, 1), date(2026, 11, 4))

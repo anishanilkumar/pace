@@ -9,7 +9,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from pydantic import ValidationError
 
 from . import auth_web, db, worker
-from .plan import Prefs, month_plan
+from .plan import Prefs, history, month_plan
+from .worker import HISTORY_MONTHS, month_start
 from .timedoctor import FetchError, cover, parse_worklog
 
 log = logging.getLogger(__name__)
@@ -59,8 +60,10 @@ def summary(month: str | None = None) -> dict:
     first = date(year, mon, 1)
     # Back far enough for the streak, which may run into last month.
     hours = db.hours(first - timedelta(days=120), today if (year, mon) == (today.year, today.month) else first + timedelta(days=31))
+    past = db.hours(month_start(today, HISTORY_MONTHS), today)
     return {
         "plan": month_plan(prefs, hours, now, (year, mon)),
+        "history": history(prefs, past, today, HISTORY_MONTHS),
         "prefs": prefs.model_dump(),
         "fetch": _fetch_state(),
         "nudges": db.recent_nudges(5),

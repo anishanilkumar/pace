@@ -14,3 +14,4 @@ timedoctor-state.json
 debug/
 *.tsbuildinfo
 *.egg-info/
+.vite/
