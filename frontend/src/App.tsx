@@ -82,7 +82,7 @@ export function App() {
             </span>
           ) : <FetchStatus fetch={summary.fetch} offline={failed === "Offline"} />)}
           {summary && (
-            <button className="btn btn-sync" onClick={fetchNow} disabled={failed === "Offline" || summary.fetch.requested}
+            <button className="btn btn-sync" onClick={fetchNow} disabled={failed === "Offline" || summary.fetch.requested || !summary.timedoctor.connected}
               title="Read Time Doctor now" aria-label="Sync with Time Doctor">
               <svg className={`icon${summary.fetch.requested ? " icon-turning" : ""}`} viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M4 8a6 6 0 0 1 11-2.5M16 12a6 6 0 0 1-11 2.5" />
@@ -117,13 +117,15 @@ export function App() {
           </>
         )
       ) : view === "settings" ? (
-        <Settings key={JSON.stringify(summary.prefs)} prefs={summary.prefs} demo={summary.demo} onSaved={() => load()} onBack={() => go("dashboard")} />
+        <Settings key={JSON.stringify(summary.prefs)} prefs={summary.prefs} demo={summary.demo}
+          user={summary.user} timedoctor={summary.timedoctor} onSaved={() => load()} onBack={() => go("dashboard")} />
       ) : (
         <Dashboard
           plan={summary.plan}
           work={summary.work}
           prefs={summary.prefs}
           fetch={summary.fetch}
+          timedoctor={summary.timedoctor}
           nudges={summary.nudges}
           history={summary.history}
           month={summary.plan.month}

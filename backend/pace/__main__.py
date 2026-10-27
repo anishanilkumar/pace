@@ -1,9 +1,9 @@
-"""python -m pace web [--port 8778]  |  worker  |  fetch [--headed]
+"""python -m pace web [--port 8778]  |  worker  |  fetch [--user NAME] [--headed]
 
 web     the API for the web and Android apps
 worker  reads Time Doctor on a schedule and makes nudges (long-running)
-fetch   one read now, then the nudge rules; for checking the setup
-        (--headed shows the browser, to watch the login)
+fetch   one read now for one person (default: the owner), then the nudge
+        rules; for checking the setup (--headed shows the browser)
 """
 
 from __future__ import annotations
@@ -42,14 +42,18 @@ def main() -> None:
         return
 
     p = argparse.ArgumentParser(prog="pace fetch")
+    p.add_argument("--user", default="")
     p.add_argument("--headed", action="store_true")
     a = p.parse_args(rest)
-    asyncio.run(worker.fetch_once(headed=a.headed))
-    last = db.last_fetch()
+    user = a.user or db.owner()
+    if not user:
+        sys.exit("Whose? Pass --user, or set PACE_OWNER.")
+    asyncio.run(worker.fetch_once(user, headed=a.headed))
+    last = db.last_fetch(user)
     if last and not last["ok"]:
         sys.exit(f"Fetch failed: {last['error']}")
-    today = datetime.now(db.get_prefs().zone).date()
-    print(f"Fetched. Today: {db.hours(today, today).get(today, 0):.2f} h")
+    today = datetime.now(db.get_prefs(user).zone).date()
+    print(f"Fetched for {user}. Today: {db.hours(user, today, today).get(today, 0):.2f} h")
 
 
 if __name__ == "__main__":

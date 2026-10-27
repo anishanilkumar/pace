@@ -2,13 +2,14 @@ import { useState } from "react";
 import { DayChart } from "../components/DayChart";
 import { Ticks } from "../components/Ticks";
 import { ageMin, clock, monthName, rupees, span, stamp } from "../format";
-import type { FetchState, HistoryMonth, NudgeItem, Plan, Prefs, Work } from "../types";
+import type { FetchState, HistoryMonth, NudgeItem, Plan, Prefs, TimeDoctorLogin, Work } from "../types";
 
 /** Hours older than this are shown as stale: dimmed, with their age. */
 export const STALE_MIN = 60;
 
-export function Dashboard({ plan, work, prefs, fetch, nudges, history, month, onMonth, onOpenMonth, onOpenSettings }: {
+export function Dashboard({ plan, work, prefs, fetch, timedoctor, nudges, history, month, onMonth, onOpenMonth, onOpenSettings }: {
   plan: Plan;
+  timedoctor: TimeDoctorLogin;
   work: Work;
   prefs: Prefs;
   fetch: FetchState;
@@ -20,7 +21,12 @@ export function Dashboard({ plan, work, prefs, fetch, nudges, history, month, on
   onOpenSettings: () => void;
 }) {
   const current = plan.today !== null;
-  const stale = current && ageMin(fetch.last_good_at) > STALE_MIN;
+  // Someone new: nothing is stale, there's just nothing yet. Say how to start.
+  const fresh = !timedoctor.connected && !fetch.last_good_at;
+  const stale = current && !fresh && ageMin(fetch.last_good_at) > STALE_MIN;
+  // With no hours yet, every verdict would be about placeholders: say how to
+  // start, and nothing else ("the display never lies").
+  if (fresh) return <ConnectNote onOpenSettings={onOpenSettings} />;
   return (
     <div className={stale ? "is-stale" : ""} style={{ display: "contents" }}>
       {stale && <StaleNote fetch={fetch} onOpenSettings={onOpenSettings} />}
@@ -71,6 +77,19 @@ function History({ months, shown, onOpen }: { months: HistoryMonth[]; shown: str
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+function ConnectNote({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <section className="verdict verdict-stale arrive">
+      <div className="verdict-head">Connect your Time Doctor</div>
+      <div className="verdict-detail">
+        Pace reads your tracked hours from Time Doctor. Add your Time Doctor email and password in{" "}
+        <a href="#settings" onClick={(e) => { e.preventDefault(); onOpenSettings(); }}>settings</a>, and set
+        your rate and target there too. The first read takes in six months of history.
+      </div>
     </section>
   );
 }

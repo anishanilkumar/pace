@@ -198,27 +198,26 @@ _TIMELINE_DATA = "/v2/content/reports/timeline_report/getTimeLineReportData.php"
 NOT_WORKING = "5"
 
 
-def _state_path() -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(settings().db_path)), "timedoctor-state.json")
+def state_path(user: str) -> str:
+    """Where this person's Time Doctor cookies are kept between reads (0600, never backed up)."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", user) or "_"
+    return os.path.join(os.path.dirname(os.path.abspath(settings().db_path)), f"timedoctor-state-{safe}.json")
 
 
 def _on_login_page(url: str) -> bool:
     return url.split("?")[0].rstrip("/").endswith("/login")
 
 
-async def _login(page) -> None:
-    s = settings()
-    if not (s.td_email and s.td_password):
-        raise FetchError("TD_EMAIL and TD_PASSWORD are not set on the server.")
-    await page.goto(s.td_base_url + "/login", wait_until="domcontentloaded")
-    await page.fill("#email", s.td_email)
-    await page.fill("#password", s.td_password)
+async def _login(page, email: str, password: str) -> None:
+    await page.goto(settings().td_base_url + "/login", wait_until="domcontentloaded")
+    await page.fill("#email", email)
+    await page.fill("#password", password)
     await page.click("#signinFormButton")
     try:
         await page.wait_for_url(lambda u: not _on_login_page(u) and "login_check" not in u, timeout=30_000)
     except Exception:
-        raise FetchError("Time Doctor refused the login. Check TD_EMAIL and TD_PASSWORD, "
-                         "or whether it now asks for a code.")
+        raise FetchError("Time Doctor refused the login. Check the email and password in settings, "
+                         "or whether Time Doctor now asks for a code.")
     log.info("signed in to Time Doctor")
 
 
@@ -322,17 +321,19 @@ async def _save_debug(page, what: str) -> None:
         log.warning("could not save debug page: %s", e)
 
 
-async def fetch_days(days: list[date], iana: str, headed: bool = False) -> tuple[dict[date, int], list[TaskRow]]:
-    """Worked seconds and task time for each day, days counted in `iana`.
+async def fetch_days(
+    days: list[date], iana: str, email: str, password: str, state: str, headed: bool = False,
+) -> tuple[dict[date, int], list[TaskRow]]:
+    """One person's worked seconds and task time for each day, days counted in `iana`.
 
-    One browser session, one request per day. Every day asked for is in the
-    result, 0 where nothing was tracked.
+    One browser session, one request per day, signed in as `email` with the
+    cookies kept at `state`. Every day asked for is in the result, 0 where
+    nothing was tracked.
     """
     from playwright.async_api import async_playwright
 
     if not settings().td_base_url:
         raise FetchError("TD_BASE_URL is not set (the company's https://<name>.timedoctor.com).")
-    state = _state_path()
     page = None
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=not headed)
@@ -346,7 +347,7 @@ async def fetch_days(days: list[date], iana: str, headed: bool = False) -> tuple
                 form = await _timeline_form(page)
             except _NotSignedIn:
                 # The saved cookies have run out (or there were none).
-                await _login(page)
+                await _login(page, email, password)
                 try:
                     form = await _timeline_form(page)
                 except _NotSignedIn:

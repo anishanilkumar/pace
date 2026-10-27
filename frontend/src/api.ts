@@ -1,4 +1,4 @@
-import type { Prefs, Summary } from "./types";
+import type { Prefs, Summary, TimeDoctorLogin } from "./types";
 
 export class ApiError extends Error {}
 
@@ -27,6 +27,11 @@ export const api = {
   savePrefs: (p: Prefs) =>
     call<Summary>("/api/prefs", { method: "PUT", body: JSON.stringify(p), headers: { "Content-Type": "application/json" } }),
   fetchNow: () => call<{ requested: boolean }>("/api/fetch", { method: "POST" }),
+  setTimeDoctor: (email: string, password: string) =>
+    call<{ timedoctor: TimeDoctorLogin }>("/api/timedoctor", {
+      method: "PUT", body: JSON.stringify({ email, password }), headers: { "Content-Type": "application/json" },
+    }),
+  removeTimeDoctor: () => call<{ timedoctor: TimeDoctorLogin }>("/api/timedoctor", { method: "DELETE" }),
   upload: (file: File) => {
     const form = new FormData();
     form.append("file", file);

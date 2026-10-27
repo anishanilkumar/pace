@@ -96,6 +96,28 @@ once:
 The server decides; the Android app polls `/api/nudges` every 15 minutes
 (WorkManager) and on open, and posts them. No Firebase.
 
+## Several people
+
+Pace serves anyone allowed in by the identity provider (Kanidm group
+`pace.users`), and each person sees only their own hours, settings, Time
+Doctor login and nudges: every table carries the Kanidm username, and every
+query is filtered by the signed-in person (`backend/pace/db.py`).
+
+- **Time Doctor logins** are given by each person in Settings. The password
+  is stored as a Fernet token (`backend/pace/secrets.py`) with the key in
+  `PACE_SECRET_KEY` or, if unset, a `secret.key` file made beside the
+  database (0600). The backup copies only the database, so a leaked backup
+  holds no usable passwords; a restore without the key just means everyone
+  enters their password again. The API never returns a password.
+- **The worker** reads for everyone with a login, one after another, each on
+  their own schedule, time zone and saved session (`timedoctor-state-<user>.json`).
+- **The owner** (`PACE_OWNER`, or whoever the single-user data was migrated
+  to) can keep using `TD_EMAIL`/`TD_PASSWORD` from the environment until
+  they set a login in Settings.
+- **Adding someone** is a Kanidm matter: a person in group `pace.users`, and a
+  credential reset link for them. They then sign in, add their Time Doctor
+  login and rate in Settings, and the first read takes in six months.
+
 ## Public demo
 
 `PACE_DEMO=1` runs the web app as a public demo, on the same build: no
@@ -119,10 +141,10 @@ uv venv .venv && uv pip install -e '.[dev]'
 .venv/bin/pytest
 PACE_DB=dev.db PACE_DEV_USER=me .venv/bin/python -m pace web
 
-# One Time Doctor read, with the browser visible:
-TD_BASE_URL=https://<company>.timedoctor.com TD_EMAIL=… \
+# One Time Doctor read for one person, with the browser visible:
+TD_BASE_URL=https://<company>.timedoctor.com TD_EMAIL=… PACE_OWNER=me \
   TD_PASSWORD="$(security find-generic-password -s pace-timedoctor -w)" \
-  PACE_DB=dev.db .venv/bin/python -m pace fetch --headed
+  PACE_DB=dev.db .venv/bin/python -m pace fetch --user me --headed
 
 # Frontend (proxies /api and /auth to :8778)
 cd frontend && npm install && npm run dev && npm test
@@ -141,7 +163,9 @@ cd android && ./gradlew testDebugUnitTest assembleDebug
 | `PACE_PUBLIC_URL` | web | `https://pace.anishsheela.com` |
 | `PACE_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` | web | Kanidm login, as Foodlog |
 | `TD_BASE_URL` | worker | `https://<company>.timedoctor.com` |
-| `TD_EMAIL` / `TD_PASSWORD` | worker | Time Doctor login. Secret: `/etc/pace.env` on the server |
+| `TD_EMAIL` / `TD_PASSWORD` | worker | The owner's Time Doctor login, until they set one in Settings. Secret: `/etc/pace.env` |
+| `PACE_OWNER` | both | Whose that env login (and any single-user data) is; found from the sessions if unset |
+| `PACE_SECRET_KEY` | both | Key for the stored Time Doctor passwords; a `secret.key` file beside the database if unset |
 | `PACE_DEBUG_DIR` | worker | screenshots of failed reads |
 | `PACE_FETCH_EVERY_MIN` / `PACE_FETCH_IDLE_EVERY_MIN` | worker | 20 / 120 |
 

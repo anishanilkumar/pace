@@ -96,7 +96,18 @@ export interface Work {
   tasks_known: boolean;
 }
 
+/** Whether Pace can read Time Doctor for this person; the password never comes back. */
+export interface TimeDoctorLogin {
+  connected: boolean;
+  email: string | null;
+  /** "settings": their own; "server": the owner's from the server; "demo". */
+  source: "settings" | "server" | "demo" | null;
+}
+
 export interface Summary {
+  /** The signed-in person: everything here is theirs alone. */
+  user: string;
+  timedoctor: TimeDoctorLogin;
   plan: Plan;
   work: Work;
   history: HistoryMonth[];

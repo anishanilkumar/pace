@@ -30,8 +30,15 @@ class Settings:
     dev_user: str
     session_days: int
     # Time Doctor Classic, signed in to by the worker's headless browser.
+    # Each person gives their own login in settings (stored encrypted, see
+    # secrets.py). TD_EMAIL/TD_PASSWORD are the owner's, from before Pace
+    # had several users; they are used for the owner until the owner sets a
+    # login in settings.
     td_email: str
     td_password: str
+    # The Kanidm username that the env login above, and any data from the
+    # single-user days, belong to.
+    owner: str
     # https://<company>.timedoctor.com: where the login form and the
     # reports live.
     td_base_url: str
@@ -63,6 +70,7 @@ def settings() -> Settings:
         session_days=int(os.environ.get("PACE_SESSION_DAYS", "90")),
         td_email=os.environ.get("TD_EMAIL", ""),
         td_password=os.environ.get("TD_PASSWORD", ""),
+        owner=os.environ.get("PACE_OWNER", ""),
         td_base_url=os.environ.get("TD_BASE_URL", "").rstrip("/"),
         debug_dir=os.environ.get("PACE_DEBUG_DIR", ""),
         fetch_every_min=int(os.environ.get("PACE_FETCH_EVERY_MIN", "20")),

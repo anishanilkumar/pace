@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
 import { clock, rupees } from "../format";
-import type { Prefs } from "../types";
+import type { Prefs, TimeDoctorLogin } from "../types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 // The server's default (plan.DEFAULT_MEETING_PATTERN), to get back to after an edit.
 const DEFAULT_MEETING_PATTERN = String.raw`\b(meetings?|stand-?ups?|calls?|sync|retro(spective)?|interviews?|1:1|demo)\b`;
 
-export function Settings({ prefs, demo, onSaved, onBack }: {
+export function Settings({ prefs, demo, user, timedoctor, onSaved, onBack }: {
   prefs: Prefs;
   demo: boolean;
+  user: string;
+  timedoctor: TimeDoctorLogin;
   onSaved: () => void;
   onBack: () => void;
 }) {
@@ -63,6 +65,8 @@ export function Settings({ prefs, demo, onSaved, onBack }: {
           and the plan, quota and nudges follow them.
         </p>
       )}
+
+      {!demo && <TimeDoctorSection user={user} login={timedoctor} onChanged={onSaved} />}
 
       <section className="instrument form">
         <div className="label">Money</div>
@@ -186,5 +190,80 @@ export function Settings({ prefs, demo, onSaved, onBack }: {
       </form>
       </>)}
     </>
+  );
+}
+
+/**
+ * This person's own Time Doctor login. The password goes to the server once,
+ * is stored there encrypted, and is never sent back: the field is always
+ * empty, and the page only says whether a login is set.
+ */
+function TimeDoctorSection({ user, login, onChanged }: { user: string; login: TimeDoctorLogin; onChanged: () => void }) {
+  const [email, setEmail] = useState(login.source === "settings" ? login.email ?? "" : "");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await api.setTimeDoctor(email.trim(), password);
+      setPassword("");
+      setMessage("Saved. Reading Time Doctor now; the first read takes in six months.");
+      onChanged();
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : "Couldn't reach the server.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setBusy(true);
+    try {
+      await api.removeTimeDoctor();
+      setMessage("Removed. The hours already read stay.");
+      onChanged();
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : "Couldn't reach the server.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const status = !login.connected
+    ? "Not connected"
+    : login.source === "server"
+      ? "Connected with the server's login"
+      : `Connected as ${login.email}`;
+  return (
+    <section className="instrument form">
+      <div className="section-head">
+        <div className="label">Time Doctor</div>
+        <span className={`stamp${login.connected ? "" : " unsaved"}`}>{status.toUpperCase()}</span>
+      </div>
+      <div className="form-grid">
+        <label className="field"><span>Email</span>
+          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+        <label className="field"><span>Password</span>
+          <input type="password" autoComplete="current-password" value={password}
+            placeholder={login.source === "settings" ? "Set; type to change" : ""}
+            onChange={(e) => setPassword(e.target.value)} /></label>
+      </div>
+      <div className="field-note">
+        Signed in here as {user}. Pace signs in to Time Doctor as you to read your own hours, and sees
+        only yours. The password is stored encrypted on the server and never shown again.
+      </div>
+      <div className="form-actions">
+        {message && <span className="field-note">{message}</span>}
+        {login.source === "settings" && (
+          <button className="btn btn-quiet" type="button" disabled={busy} onClick={remove}>Remove</button>
+        )}
+        <button className="btn btn-primary" type="button" disabled={busy || !email.includes("@") || !password} onClick={save}>
+          Save login
+        </button>
+      </div>
+    </section>
   );
 }

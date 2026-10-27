@@ -32,6 +32,8 @@ from .worker import HISTORY_MONTHS, month_start, run_nudges
 log = logging.getLogger(__name__)
 
 REFRESH_EVERY = timedelta(minutes=5)
+# Every demo visitor is this one user (auth_web.current_user).
+USER = "demo"
 PROJECT = "Atlas"
 # Productive tasks, a few per week; the week picks which.
 TASKS = [
@@ -95,7 +97,7 @@ def worked_so_far(now: datetime, total: int) -> int:
 
 def refresh(now: datetime | None = None, force: bool = False) -> None:
     now = now or datetime.now(timezone.utc)
-    last = db.get_kv("demo_refreshed")
+    last = db.get_kv(USER, "demo_refreshed")
     if not force and last and now - datetime.fromisoformat(last) < REFRESH_EVERY:
         return
     p = prefs(now.date())
@@ -113,15 +115,14 @@ def refresh(now: datetime | None = None, force: bool = False) -> None:
         days[d] = sum(s for _, s in planned)
         tasks += [(d, f"{PROJECT}/{t}", t, PROJECT, s) for t, s in planned]
         d += timedelta(days=1)
-    db.put_prefs(p)
-    db.put_days(days)
-    db.put_tasks(month_start(today, HISTORY_MONTHS), today, tasks)
-    with db.write_tx() as conn:
-        # Only the latest "read" matters, and the demo makes one every few minutes.
-        conn.execute("DELETE FROM fetches")
-        # Yesterday's nudges are yesterday's: keep the list to today's.
-        conn.execute("DELETE FROM nudges WHERE created_at < ?", ((now - timedelta(days=1)).isoformat(),))
-    db.fetch_finished(db.fetch_started("browser"))
-    db.set_kv("demo_refreshed", now.isoformat())
-    run_nudges(now)
+    db.put_prefs(USER, p)
+    db.put_days(USER, days)
+    db.put_tasks(USER, month_start(today, HISTORY_MONTHS), today, tasks)
+    # Only the latest "read" matters, and the demo makes one every few minutes.
+    db.clear_fetches(USER)
+    # Yesterday's nudges are yesterday's: keep the list to today's.
+    db.drop_old_nudges(USER, now - timedelta(days=1))
+    db.fetch_finished(db.fetch_started(USER, "browser"))
+    db.set_kv(USER, "demo_refreshed", now.isoformat())
+    run_nudges(USER, now)
     log.info("demo: refreshed to %s, %.2f h today", now.isoformat(timespec="minutes"), days[today] / 3600)
