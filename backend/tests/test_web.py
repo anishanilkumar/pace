@@ -287,3 +287,32 @@ def test_migration_refuses_to_guess_the_owner(tmp_path, monkeypatch):
         db.init()
     # Nothing was half-done: the old table is untouched.
     assert sqlite3.connect(path).execute("SELECT COUNT(*) FROM days").fetchone()[0] == 1
+
+
+def test_an_old_demo_database_migrates_to_the_demo_user(tmp_path, monkeypatch):
+    import sqlite3
+
+    from pace import config
+
+    path = tmp_path / "old-demo.db"
+    old = sqlite3.connect(path)
+    old.executescript("""
+        CREATE TABLE days (day TEXT PRIMARY KEY, seconds INTEGER NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE task_time (day TEXT, task_id TEXT, task TEXT, project TEXT, seconds INTEGER);
+        CREATE TABLE fetches (id INTEGER PRIMARY KEY, source TEXT, started_at TEXT, finished_at TEXT, ok INTEGER, error TEXT);
+        CREATE TABLE nudges (id INTEGER PRIMARY KEY, key TEXT, level TEXT, title TEXT, body TEXT, created_at TEXT);
+        CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
+        CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, username TEXT, created_at REAL, expires_at REAL);
+        INSERT INTO days VALUES ('2026-10-01', 7200, 'x');
+    """)
+    old.close()
+    monkeypatch.setenv("PACE_DB", str(path))
+    monkeypatch.setenv("PACE_DEMO", "1")
+    monkeypatch.delenv("PACE_DEV_USER", raising=False)
+    config.settings.cache_clear()
+    # Starts (no MigrationError), and the old rows became the demo's: no
+    # one else's, and then regenerated like the rest.
+    c = TestClient(create_app())
+    assert c.get("/api/summary").json()["user"] == "demo"
+    assert db.hours("", date(2026, 10, 1), date(2026, 10, 1)) == {}
+    assert date(2026, 10, 1) in db.hours("demo", date(2026, 10, 1), date(2026, 10, 1))

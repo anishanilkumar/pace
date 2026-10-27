@@ -166,14 +166,15 @@ def _migrate_to_users(conn: sqlite3.Connection) -> None:
     """Pace began single-user. Give that person's rows to them, by name.
 
     The owner is PACE_OWNER, or else the one username that has ever signed
-    in. With neither (several people signed in, or nobody) the data can't
+    in (in the demo, always "demo"). With neither (several people signed in, or nobody) the data can't
     be placed safely, and the app refuses to start rather than guess.
     """
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(days)")}
     if not cols or "user" in cols:
         return
     has_rows = any(conn.execute(f"SELECT 1 FROM {t} LIMIT 1").fetchone() for t in _SINGLE_USER)
-    owner = settings().owner
+    # The demo's rows are all its one visitor's, and regenerated anyway.
+    owner = "demo" if settings().demo else settings().owner
     if not owner:
         names = [r[0] for r in conn.execute("SELECT DISTINCT username FROM sessions")]
         owner = names[0] if len(names) == 1 else ""
