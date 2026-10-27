@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pace"
+version = "0.1.0"
+description = "Freelance pace keeper: reads tracked hours from Time Doctor Classic with a headless browser, and nudges when the month's target slips"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+    "pyjwt>=2.8",
+    "cryptography>=42",
+    "python-multipart>=0.0.9",
+    # The Time Doctor API stopped answering, so the worker signs in to the
+    # web app like a person would. On NixOS the browser comes from
+    # playwright-driver.browsers (PLAYWRIGHT_BROWSERS_PATH), not a download.
+    "playwright>=1.45",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pace"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

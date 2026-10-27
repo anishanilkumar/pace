@@ -1,0 +1,9 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+# Release signing: the keystore and its passwords never go in git.
+keystore.properties
+*.jks

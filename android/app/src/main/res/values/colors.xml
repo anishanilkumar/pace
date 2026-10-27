@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The house palette (jarvis/frontend/src/styles/tokens.css). Compose
+         reads its own copy in ui/Theme.kt; these are for the window, the
+         launcher icon and notifications, which live outside Compose. -->
+    <color name="ground">#FF0A0E14</color>
+    <color name="arc">#FF3DD6F5</color>
+    <color name="gold">#FFE8A33D</color>
+</resources>

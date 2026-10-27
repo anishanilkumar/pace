@@ -1,0 +1,16 @@
+.deploy.env
+.idea/
+.DS_Store
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+.venv/
+*.db
+*.db-shm
+*.db-wal
+# A live Time Doctor session; never commit it.
+timedoctor-state.json
+debug/
+*.tsbuildinfo
+*.egg-info/

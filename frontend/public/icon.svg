@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full-bleed ground so Android's masks cut only dark; the mark sits in
+       the central 80% safe zone. House line style: 20-unit grid, 1.6 stroke. -->
+  <rect width="512" height="512" fill="#0A0E14"/>
+  <g transform="translate(96 84) scale(16)" fill="none" stroke="#3dd6f5"
+     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- A gauge: an open arc with index ticks and a needle past the middle. -->
+    <path d="M3.5 14.5a7 7 0 1 1 13 0"/>
+    <path d="M10 3.6v1.6M4.6 7l1.2 1M15.4 7l-1.2 1"/>
+    <path d="M10 12l3.6-3.2"/>
+    <circle cx="10" cy="12" r="1"/>
+  </g>
+  <!-- One engraved rule, as on the Jarvis tiles. -->
+  <path d="M136 416h240" stroke="#3dd6f5" stroke-opacity="0.35" stroke-width="10" stroke-linecap="round"/>
+</svg>

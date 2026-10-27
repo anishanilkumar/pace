@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The web icon's mark (frontend/public/icon.svg): a gauge, its needle past
+     the middle, and one engraved rule. 108dp adaptive canvas; the 20-unit
+     mark is scaled to sit inside the central 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="33" android:translateY="28" android:scaleX="2.1" android:scaleY="2.1">
+        <path android:pathData="M3.5,14.5a7,7 0,1 1,13 0" android:strokeColor="#FF3DD6F5" android:strokeWidth="1.6" android:strokeLineCap="round" />
+        <path android:pathData="M10,3.6v1.6M4.6,7l1.2,1M15.4,7l-1.2,1" android:strokeColor="#FF3DD6F5" android:strokeWidth="1.6" android:strokeLineCap="round" />
+        <path android:pathData="M10,12l3.6,-3.2" android:strokeColor="#FF3DD6F5" android:strokeWidth="1.6" android:strokeLineCap="round" />
+        <path android:pathData="M9,12a1,1 0,1 0,2 0a1,1 0,1 0,-2 0" android:strokeColor="#FF3DD6F5" android:strokeWidth="1.6" />
+    </group>
+    <path android:pathData="M40,79h28" android:strokeColor="#593DD6F5" android:strokeWidth="2" android:strokeLineCap="round" />
+</vector>

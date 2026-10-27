@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pace</string>
+    <string name="channel_nudges">Nudges</string>
+    <string name="channel_nudges_about">When today or the month falls behind, or Time Doctor can\'t be read.</string>
+    <string name="channel_progress">Progress</string>
+    <string name="channel_progress_about">Today\'s quota done, and the month\'s target reached.</string>
+</resources>
