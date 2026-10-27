@@ -131,3 +131,9 @@ cp .deploy.env.example .deploy.env   # once
 
 **Android:** release signing reads `android/keystore.properties` (gitignored),
 as in Foodlog. Back up the keystore.
+
+## License
+
+MIT, see `LICENSE`. The bundled fonts (Archivo, IBM Plex Mono, Manjari, in
+`frontend/public/fonts/` and `android/app/src/main/res/font/`) keep their own
+SIL Open Font License; see `frontend/public/fonts/README.md`.
