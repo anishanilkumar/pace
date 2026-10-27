@@ -50,9 +50,10 @@ class Prefs(BaseModel):
     # shown as out of reach rather than quietly asking for 13 h tomorrow.
     max_hours_per_day: float = Field(10.0, gt=0, le=24)
     leaves: list[str] = Field(default_factory=list, max_length=400)
-    # Time Doctor reports days in the company's zone (set in Time Doctor), and
-    # the days stored here are its days, so this must match it.
-    tz: str = "Asia/Kolkata"
+    # The person's own zone, wherever Time Doctor's company is: a day runs
+    # from their midnight to their midnight (the worker asks Time Doctor for
+    # days in this zone), and the nudge hours are read in it.
+    tz: str = "UTC"
     nudges: bool = True
     # When the phone may be nudged. Not working hours (there are none): the
     # stretch of the day a notification is welcome in.

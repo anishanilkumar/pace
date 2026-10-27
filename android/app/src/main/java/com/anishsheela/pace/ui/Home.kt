@@ -116,8 +116,14 @@ private fun TopBar(state: HomeState, onFetchNow: () -> Unit, onSettings: () -> U
                 s.isStale() -> Triple(p.slate, "Read ${stamp(s.lastGoodAt)}", false)
                 else -> Triple(p.arc, "Read ${stamp(s.lastGoodAt)}", false)
             }
-            StatusPill(text, dot, textColor = if (warn) p.gold else null, blink = s.fetchRequested,
-                onClick = if (state.offline || s.fetchRequested) null else onFetchNow)
+            // Status only; the Sync button beside it does the reading.
+            StatusPill(text, dot, textColor = if (warn) p.gold else null, blink = s.fetchRequested, onClick = null)
+            Spacer(Modifier.width(8.dp))
+            Btn(
+                if (s.fetchRequested) "Syncing" else "Sync", onFetchNow,
+                kind = BtnKind.Add, icon = Icons.Refresh, minHeight = 44.dp,
+                enabled = !state.offline && !s.fetchRequested,
+            )
         }
         Spacer(Modifier.width(8.dp))
         Box(

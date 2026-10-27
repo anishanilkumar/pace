@@ -211,6 +211,29 @@ ul { list-style: none; }
 .pill:hover { color: var(--ink); }
 .pill:disabled { cursor: default; }
 .pill-warn { color: var(--gold); }
+/* Status only: the Sync button next to it does the reading. */
+.pill-status { cursor: default; }
+.pill-status:hover { color: var(--ink-dim); }
+.pill-warn.pill-status:hover { color: var(--gold); }
+/* Line icons on the 20-unit grid: stroke, never fill (house icon style). */
+.icon { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.btn.btn-sync { min-height: 44px; padding: 0 0.875rem; color: var(--arc); }
+.btn-sync svg { width: 18px; height: 18px; flex: none; }
+/* Turning means a read is under way: the one moving thing, and only then. */
+.icon-turning { animation: turn 1.2s steps(8) infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+.pill-word { margin-right: -0.25rem; }
+/* A phone: the bar holds the mark, the status, Sync and Settings in 343px
+   (375 less the gutters). The status keeps its time, Sync tightens, and on
+   the narrowest phones Sync keeps only its icon. */
+@media (max-width: 26rem) {
+  .pill-word { display: none; }
+  .btn.btn-sync { padding: 0 0.625rem; }
+  .topbar-right { gap: 0.75rem; }
+}
+@media (max-width: 22rem) {
+  .btn-sync .btn-label { display: none; }
+}
 .pill-dot { width: 8px; height: 8px; background: var(--arc); flex: none; }
 .pill-dot-reading { animation: blink 0.9s steps(2) infinite; }
 .pill-dot-stale { background: var(--stale); }

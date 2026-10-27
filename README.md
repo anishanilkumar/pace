@@ -26,35 +26,40 @@ Foodlog): see the header of `frontend/src/styles.css`.
 ## How the hours get in
 
 Time Doctor Classic's API stopped working, so `pace-worker` signs in to
-your company's Time Doctor site
-(`https://<company>.timedoctor.com`) with a headless Chromium (Playwright), the
-way a person would. It then reads the JSON the dashboard's own Timesheet
-panel uses:
+your company's Time Doctor site (`https://<company>.timedoctor.com`) with a
+headless Chromium (Playwright), the way a person would, and reads the
+**Timeline** report: every stretch of work with its start, end and task.
 
 ```
-GET /individual-timesheet?fromDate=2026-10-01&toDate=2026-10-27
-→ users → {id: {timeline: {"2026-10-02": {totaltime: 1489, worktime, editedtime, mobiletime}}}}
+POST /v2/content/reports/timeline_report/getTimeLineReportData.php
+     userIds, fromDate=toDate=<day>, timezone=<Time Doctor's id for your zone>, exportToType=web
+→ users → [{tasks → [{start_time, end_time, task_name, client_name, work_time, work_mode}]}]
 ```
 
-`totaltime` (seconds, in the company's time zone) is what gets paid: computer,
-mobile and manual time together. The session cookies are kept between runs,
-so the worker logs in again only when Time Doctor says it isn't signed in.
-That endpoint, and the login form (`#email`, `#password`,
-`#signinFormButton`), were found by watching the web app in October 2026; if
+Why the Timeline and not the timesheet: Time Doctor's daily totals are cut at
+the company's midnight (GMT+05:30 here). Working from Germany, everything
+after 19:30 lands on the next day there. The Timeline converts each stretch
+to the zone asked for, so Pace asks in yours (**Settings, Your time zone**)
+and a day runs from your midnight. Over September and October the totals
+match the timesheet's; only late-evening work moves to the right day.
+
+One request per day: each read takes yesterday and today, the whole month
+once a day (for edited time), and, once, six months of history (about 200
+requests, under a minute). `work_mode` 5 is "Not Working" and is left out;
+computer time (0) and edited time (3) count. The session cookies are kept
+between runs, so the worker logs in again only when sent to the login page.
+These endpoints and the login form (`#email`, `#password`,
+`#signinFormButton`) were found by watching the web app in October 2026; if
 Time Doctor changes them, a failed read saves a screenshot in
 `PACE_DEBUG_DIR`, and the app says it can't read Time Doctor rather than
 showing stale numbers as fresh.
 
-**Meetings and work** come from the Projects report, which has time per task
-per day. Its page POSTs a form (every project id, your user id, a CSRF token
-from the page, the dates) to `/v2/content/projectsReport/renderProjectsReport.php`
-and gets JSON with `tasks[].entries[{date, workedTime}]`. The worker opens the
-page, takes that request, and sends it again with its own dates. A task
-whose name matches the meeting rule (Settings; whole words such as meeting,
-standup, call, sync) is a meeting; everything else is productive work.
+**Meetings and work** come from the same entries: a task whose name matches
+the meeting rule (Settings; whole words such as meeting, standup, call,
+sync) is a meeting; everything else is productive work.
 
-**History:** the first read backfills the last six whole months of hours and
-task time, once.
+**History:** the first read backfills the last six whole months, once, and
+again if you change your time zone.
 
 **Fallback:** in Settings, upload a worklog CSV exported from Time Doctor
 (Reports, Worklog, CSV). The days in the file replace what's stored.
@@ -124,13 +129,11 @@ cd android && ./gradlew testDebugUnitTest assembleDebug
 | `PACE_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` | web | Kanidm login, as Foodlog |
 | `TD_BASE_URL` | worker | `https://<company>.timedoctor.com` |
 | `TD_EMAIL` / `TD_PASSWORD` | worker | Time Doctor login. Secret: `/etc/pace.env` on the server |
-| `TD_USER_ID` | worker | only if the account sees more than one person's timesheet |
 | `PACE_DEBUG_DIR` | worker | screenshots of failed reads |
 | `PACE_FETCH_EVERY_MIN` / `PACE_FETCH_IDLE_EVERY_MIN` | worker | 20 / 120 |
 
-The rate, target, working days, leave, window, time zone (default
-Asia/Kolkata, Time Doctor's company zone) and nudges on/off are set in the
-app's Settings.
+The rate, target, working days, leave, your time zone, nudge hours, the
+meeting rule and nudges on/off are set in the app's Settings.
 
 ## Deploying
 

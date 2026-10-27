@@ -49,55 +49,50 @@ def test_cover_fills_missing_days_with_zero():
     assert out == {date(2026, 10, 1): 0, date(2026, 10, 2): 60, date(2026, 10, 3): 0}
 
 
-# /individual-timesheet, as the dashboard's Timesheet panel gets it (trimmed).
-TIMESHEET = {
-    "users": {
-        "1001": {
-            "name": "Sample",
-            "timeline": {
-                "2026-10-01": {"date": "2026-10-01", "worktime": 0, "editedtime": 0, "mobiletime": 0, "totaltime": 0},
-                "2026-10-02": {"date": "2026-10-02", "worktime": 889, "editedtime": 600, "mobiletime": 0, "totaltime": 1489},
-            },
-        }
-    },
-    "datesSelected": "", "countUsers": 1, "haveData": True, "reportType": "",
-}
+# getTimeLineReportData.php, as the Timeline page gets it for one day (trimmed).
+TIMELINE = {"users": [{"userFullName": "Sample", "totalWorkedTimeInSec": 7200, "tasks": [
+    {"start_time": "2026-09-04 00:00:00", "end_time": "2026-09-04 09:10:00", "task_name": "Not Working",
+     "client_name": "No Project", "work_time": 33000, "work_mode": "5"},
+    {"start_time": "2026-09-04 09:10:00", "end_time": "2026-09-04 10:10:00", "task_name": "Engineering Meeting",
+     "client_name": "TAI", "work_time": 3600, "work_mode": "0"},
+    {"start_time": "2026-09-04 10:20:00", "end_time": "2026-09-04 10:50:00", "task_name": "Engineering Meeting",
+     "client_name": "TAI", "work_time": "1800", "work_mode": "0"},
+    {"start_time": "2026-09-04 20:30:00", "end_time": "2026-09-04 21:00:00", "task_name": "Certificate issue ",
+     "client_name": "TAI", "work_time": 1800, "work_mode": "3"},
+    {"start_time": "2026-09-04 21:00:00", "end_time": "2026-09-04 21:00:00", "task_name": "Certificate issue",
+     "client_name": "TAI", "work_time": 0, "work_mode": "0"},
+]}]}
 
 
-def test_timesheet_json():
-    from pace.timedoctor import parse_timesheet
+def test_timeline_day():
+    from pace.timedoctor import parse_timeline
 
-    assert parse_timesheet(TIMESHEET) == {date(2026, 10, 1): 0, date(2026, 10, 2): 1489}
-    assert parse_timesheet(TIMESHEET, "1001")[date(2026, 10, 2)] == 1489
-
-
-def test_timesheet_not_signed_in_and_ambiguous():
-    from pace.timedoctor import _NotSignedIn, parse_timesheet
-
-    with pytest.raises(_NotSignedIn):
-        parse_timesheet({"status": "Error", "message": "not authenticated, please login"})
-    two = {"users": {"1": {"timeline": {}}, "2": {"timeline": {}}}}
-    with pytest.raises(FetchError):
-        parse_timesheet(two)
-    assert parse_timesheet(two, "2") == {}
-
-
-# renderProjectsReport.php, as the Projects report page gets it (trimmed).
-PROJECTS = {"report": [{"name": "TAI", "users": [{"id": "1001", "name": "Sample", "tasks": [
-    {"id": "11", "name": "Engineering Meeting", "entries": [
-        {"date": "2026-10-20", "workedTime": 3600}, {"date": "2026-10-21", "workedTime": 0}]},
-    {"id": "12", "name": "Foundational certificate issue ", "entries": [{"date": "2026-10-21", "workedTime": 4771}]},
-]}]}]}
-
-
-def test_projects_report_json():
-    from pace.timedoctor import parse_projects_report
-
-    rows = parse_projects_report(PROJECTS)
-    assert rows == [
-        (date(2026, 10, 20), "11", "Engineering Meeting", "TAI", 3600),
-        (date(2026, 10, 21), "12", "Foundational certificate issue", "TAI", 4771),
+    total, rows = parse_timeline(TIMELINE, date(2026, 9, 4))
+    # "Not Working" is left out; edited time (mode 3) counts; work_time may be a string.
+    assert total == 7200
+    assert sorted(rows) == [
+        (date(2026, 9, 4), "TAI/Certificate issue", "Certificate issue", "TAI", 1800),
+        (date(2026, 9, 4), "TAI/Engineering Meeting", "Engineering Meeting", "TAI", 5400),
     ]
-    assert parse_projects_report(PROJECTS, "999") == []
+
+
+def test_timeline_empty_and_malformed():
+    from pace.timedoctor import parse_timeline
+
+    assert parse_timeline({"users": []}, date(2026, 9, 6)) == (0, [])
     with pytest.raises(FetchError):
-        parse_projects_report({"status": "Error"})
+        parse_timeline({"status": "Error"}, date(2026, 9, 6))
+    with pytest.raises(FetchError):
+        parse_timeline({"users": [{"tasks": []}, {"tasks": []}]}, date(2026, 9, 6))
+
+
+def test_timezone_id_lookup():
+    from pace.timedoctor import find_timezone_id
+
+    tzs = {"timezones": [
+        {"id": 31, "name": "(GMT+01:00) Berlin, Stockholm", "timezone": "Europe/Berlin", "offset": 3600},
+        {"id": 47, "name": "(GMT+05:30) Mumbai, Kolkata", "timezone": "Asia/Colombo", "offset": 19800},
+    ]}
+    assert find_timezone_id(tzs, "Europe/Berlin") == "31"
+    assert find_timezone_id(tzs["timezones"], "Asia/Colombo") == "47"
+    assert find_timezone_id(tzs, "Mars/Olympus") is None

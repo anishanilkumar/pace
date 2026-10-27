@@ -76,7 +76,17 @@ export function App() {
           Pace
         </button>
         <div className="topbar-right">
-          {summary && <FetchPill fetch={summary.fetch} offline={failed === "Offline"} onClick={fetchNow} />}
+          {summary && <FetchStatus fetch={summary.fetch} offline={failed === "Offline"} />}
+          {summary && (
+            <button className="btn btn-sync" onClick={fetchNow} disabled={failed === "Offline" || summary.fetch.requested}
+              title="Read Time Doctor now" aria-label="Sync with Time Doctor">
+              <svg className={`icon${summary.fetch.requested ? " icon-turning" : ""}`} viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M4 8a6 6 0 0 1 11-2.5M16 12a6 6 0 0 1-11 2.5" />
+                <path d="M15 2.5v3h-3M5 17.5v-3h3" />
+              </svg>
+              <span className="btn-label">{summary.fetch.requested ? "Syncing" : "Sync"}</span>
+            </button>
+          )}
           {view === "dashboard" && <button className="pill" onClick={() => go("settings")}>Settings</button>}
         </div>
       </header>
@@ -117,10 +127,12 @@ export function App() {
   );
 }
 
-/** Where the hours came from and how old they are. Tap to read Time Doctor now. */
-function FetchPill({ fetch, offline, onClick }: { fetch: FetchState; offline: boolean; onClick: () => void }) {
+/** Where the hours came from and how old they are; the Sync button beside it reads Time Doctor now. */
+function FetchStatus({ fetch, offline }: { fetch: FetchState; offline: boolean }) {
   let dot = "";
   let text: string;
+  // "Read" before a time: dropped on a narrow phone, where the time alone says it.
+  let word = "";
   let warn = false;
   if (offline) {
     dot = "pill-dot-stale";
@@ -131,19 +143,20 @@ function FetchPill({ fetch, offline, onClick }: { fetch: FetchState; offline: bo
   } else if (fetch.last_ok === false) {
     dot = "pill-dot-failing";
     warn = true;
-    text = fetch.last_good_at ? `Read ${stamp(fetch.last_good_at)}` : "Not read";
+    [word, text] = fetch.last_good_at ? ["Read", stamp(fetch.last_good_at)] : ["", "Not read"];
   } else if (!fetch.last_good_at) {
     dot = "pill-dot-stale";
     text = "Not read yet";
   } else {
     dot = ageMin(fetch.last_good_at) > STALE_MIN ? "pill-dot-stale" : "";
-    text = `${fetch.last_good_source === "upload" ? "Uploaded" : "Read"} ${stamp(fetch.last_good_at)}`;
+    word = fetch.last_good_source === "upload" ? "Uploaded" : "Read";
+    text = stamp(fetch.last_good_at);
   }
   return (
-    <button className={`pill${warn ? " pill-warn" : ""}`} onClick={onClick} disabled={offline || fetch.requested}
-      title={fetch.last_error ?? "Read Time Doctor now"}>
+    <span className={`pill pill-status${warn ? " pill-warn" : ""}`} title={fetch.last_error ?? undefined} role="status">
       <span className={`pill-dot ${dot}`} />
+      {word && <span className="pill-word">{word}</span>}
       {text}
-    </button>
+    </span>
   );
 }

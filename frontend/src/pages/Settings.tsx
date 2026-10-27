@@ -90,11 +90,12 @@ export function Settings({ prefs, onSaved, onBack }: {
         <div className="form-grid">
           <label className="field"><span>Most hours in a day</span>
             <input type="number" inputMode="decimal" step="0.5" min="1" max="24" value={p.max_hours_per_day} onChange={num("max_hours_per_day")} /></label>
-          <label className="field"><span>Time zone</span>
+          <label className="field"><span>Your time zone</span>
             <input type="text" value={p.tz} onChange={(e) => set("tz", e.target.value)} spellCheck={false} /></label>
         </div>
         <div className="field-note">
-          The time zone must match Time Doctor's company zone: its days are the days here.
+          Where you are, not Time Doctor's company zone (e.g. Europe/Berlin). Days run from your
+          midnight, and nudge hours are in it. Changing it re-reads six months of history.
         </div>
       </section>
 

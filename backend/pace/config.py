@@ -33,10 +33,8 @@ class Settings:
     td_email: str
     td_password: str
     # https://<company>.timedoctor.com: where the login form and the
-    # dashboard's timesheet endpoint live.
+    # reports live.
     td_base_url: str
-    # Only for an account that sees more than one person's timesheet.
-    td_user_id: str
     # Screenshots and page HTML of a failed fetch go here, so a change on
     # Time Doctor's side can be seen rather than guessed at. Empty: off.
     debug_dir: str
@@ -63,7 +61,6 @@ def settings() -> Settings:
         td_email=os.environ.get("TD_EMAIL", ""),
         td_password=os.environ.get("TD_PASSWORD", ""),
         td_base_url=os.environ.get("TD_BASE_URL", "").rstrip("/"),
-        td_user_id=os.environ.get("TD_USER_ID", ""),
         debug_dir=os.environ.get("PACE_DEBUG_DIR", ""),
         fetch_every_min=int(os.environ.get("PACE_FETCH_EVERY_MIN", "20")),
         fetch_idle_every_min=int(os.environ.get("PACE_FETCH_IDLE_EVERY_MIN", "120")),

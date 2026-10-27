@@ -1,33 +1,42 @@
 """Reading tracked hours out of Time Doctor Classic with a headless browser.
 
 The API (webapi.timedoctor.com) no longer answers, so the worker does what a
-person would: open the company's Time Doctor site, sign in, and read the same
-data the dashboard's Timesheet panel reads.
+person would: open the company's Time Doctor site, sign in, and read the data
+its own reports read.
+
+Which report, and why
+---------------------
+The timesheet and projects reports bucket time into days by the date each
+worklog was stamped with, in the Time Doctor profile's time zone (the
+company's, GMT+05:30), and their ``timezone`` parameter doesn't re-bucket.
+For someone working from Germany, everything after 19:30 their time lands
+on the next India day. The **Timeline** report is different: it lists every
+stretch of work with its start and end, converted to the time zone asked
+for, for the day asked for in that zone. So the worker reads the Timeline,
+one day per request, in the person's own zone, and days begin at their
+midnight. (Checked October 2026: the totals over two months match the
+timesheet's; only work after 19:30 Berlin moves to the right day.)
 
 What the web app does (seen in its network traffic, October 2026):
 
 * The company site is https://<company>.timedoctor.com (TD_BASE_URL). Its
   /login is a plain form: #email, #password, #signinFormButton.
-* The dashboard's Timesheet panel calls
-  ``/individual-timesheet?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD`` and gets
-  JSON: ``users -> {id: {timeline: {date: {totaltime, worktime, editedtime,
-  mobiletime}}}}``, seconds per day in the company's time zone. The session
-  alone picks the user; the other parameters the panel sends change nothing.
-* Without a session it answers 302 to /login, or, as XHR,
-  ``{"status": "Error", "message": "not authenticated, please login"}``.
-* Time per task per day, for the meetings/work split, comes from the Projects
-  report (``/v2/index.php?page=projects_report``). The page POSTs a form to
-  ``/v2/content/projectsReport/renderProjectsReport.php`` with every project
-  id, the user's id, a CSRF token from the page and the dates, and gets JSON:
-  ``report -> [project {name, users -> [{tasks -> [{id, name, entries ->
-  [{date, workedTime}]}]}]}]``. Rather than rebuild that form, the worker
-  opens the page, takes the request it makes on load, and sends it again with
-  its own dates. Six months in one request is about 85 KB.
+* ``/timezones`` lists Time Doctor's zones as ``{id, name, timezone (IANA),
+  offset}``; the worker looks up the id for the person's IANA zone there.
+* The Timeline page (``/v2/index.php?page=timeline_report``) POSTs
+  ``userIds, fromDate, toDate, timezone, exportToType=web`` to
+  ``/v2/content/reports/timeline_report/getTimeLineReportData.php`` and gets
+  ``users -> [{tasks -> [{start_time, end_time, task_name, client_name,
+  work_time, work_mode}]}]`` for one day, whatever toDate says. work_mode
+  5 is "Not Working"; 0 is computer time, 3 edited (manual) time. The worker
+  opens the page, takes the request it makes on load (for the user ids),
+  and sends it again per day with its own date and zone.
+* Without a session the site answers with a redirect to /login.
 
-So the browser is only needed to sign in. The request itself goes through the
+So the browser is only needed to sign in. The requests go through the
 browser context (page.request), which carries its cookies. The cookies are
-kept between runs (storage_state), so a fetch every 20 minutes doesn't mean a
-login every 20 minutes: the worker signs in again only when told it isn't.
+kept between runs (storage_state), so a read every 20 minutes doesn't mean a
+login every 20 minutes: the worker signs in again only when sent to /login.
 
 The worklog CSV parser below is the manual way in, for when the login can't
 get through (a new captcha, a changed form): export from Time Doctor and
@@ -183,12 +192,18 @@ def cover(found: dict[date, int], start: date, end: date) -> dict[date, int]:
 
 # --- the browser -----------------------------------------------------------------
 
+TaskRow = tuple[date, str, str, str, int]  # day, task_id, task, project, seconds
+_TIMELINE_PAGE = "/v2/index.php?page=timeline_report"
+_TIMELINE_DATA = "/v2/content/reports/timeline_report/getTimeLineReportData.php"
+NOT_WORKING = "5"
+
+
 def _state_path() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(settings().db_path)), "timedoctor-state.json")
 
 
 def _on_login_page(url: str) -> bool:
-    return url.rstrip("/").endswith("/login") or "/login?" in url
+    return url.split("?")[0].rstrip("/").endswith("/login")
 
 
 async def _login(page) -> None:
@@ -211,96 +226,85 @@ class _NotSignedIn(Exception):
     pass
 
 
-def parse_timesheet(data: dict, user_id: str = "") -> dict[date, int]:
-    """Seconds per day from /individual-timesheet's JSON.
+def find_timezone_id(data, iana: str) -> str | None:
+    """Time Doctor's id for an IANA zone, from /timezones (searched, whatever its nesting)."""
+    if isinstance(data, dict):
+        if data.get("timezone") == iana and "id" in data:
+            return str(data["id"])
+        data = list(data.values())
+    if isinstance(data, list):
+        for item in data:
+            found = find_timezone_id(item, iana)
+            if found:
+                return found
+    return None
 
-    `totaltime` is what the dashboard shows: computer, mobile and edited
-    (manual) time together, which is what gets paid.
-    """
-    if data.get("status") == "Error":
-        raise _NotSignedIn(data.get("message", ""))
+
+def parse_timeline(data: dict, day: date) -> tuple[int, list[TaskRow]]:
+    """One day's worked seconds and its task time, from getTimeLineReportData's JSON."""
     users = data.get("users")
-    if not isinstance(users, dict) or not users:
-        raise FetchError("Time Doctor's timesheet came back without a user.")
-    if user_id:
-        if user_id not in users:
-            raise FetchError(f"TD_USER_ID {user_id} is not in Time Doctor's timesheet.")
-        user = users[user_id]
-    elif len(users) == 1:
-        user = next(iter(users.values()))
-    else:
-        raise FetchError(f"Time Doctor's timesheet has {len(users)} people; set TD_USER_ID to pick one.")
-    out = {}
-    for day, row in (user.get("timeline") or {}).items():
-        out[date.fromisoformat(day)] = int(row.get("totaltime") or 0)
-    return out
+    if not isinstance(users, list):
+        raise FetchError("Time Doctor's timeline came back without users.")
+    if len(users) > 1:
+        raise FetchError(f"Time Doctor's timeline has {len(users)} people; it should be filtered to one.")
+    total = 0
+    per_task: dict[tuple[str, str], int] = {}
+    for entry in (users[0].get("tasks") if users else None) or []:
+        if str(entry.get("work_mode")) == NOT_WORKING:
+            continue
+        seconds = int(float(entry.get("work_time") or 0))
+        if seconds <= 0:
+            continue
+        task = str(entry.get("task_name") or "").strip() or "No task"
+        project = str(entry.get("client_name") or "").strip()
+        total += seconds
+        per_task[(task, project)] = per_task.get((task, project), 0) + seconds
+    rows = [(day, f"{project}/{task}", task, project, sec) for (task, project), sec in per_task.items()]
+    return total, rows
 
 
-async def _timesheet(page, start: date, end: date) -> dict[date, int]:
+async def _timeline_form(page) -> list[tuple[str, str]]:
+    """The request the Timeline page makes on load: it carries the user ids."""
     s = settings()
-    r = await page.request.get(
-        s.td_base_url + "/individual-timesheet",
-        params={"fromDate": start.isoformat(), "toDate": end.isoformat()},
-        headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"},
-    )
-    if _on_login_page(r.url) or r.status in (401, 403):
-        raise _NotSignedIn()
-    if not r.ok:
-        raise FetchError(f"Time Doctor's timesheet answered HTTP {r.status}.")
     try:
-        data = await r.json()
+        async with page.expect_request(lambda r: _TIMELINE_DATA in r.url, timeout=45_000) as req:
+            await page.goto(s.td_base_url + _TIMELINE_PAGE, wait_until="domcontentloaded")
     except Exception:
-        # An HTML page where JSON should be: most likely a login page.
-        raise _NotSignedIn()
-    return parse_timesheet(data, s.td_user_id)
-
-
-TaskRow = tuple[date, str, str, str, int]  # day, task_id, task, project, seconds
-_PROJECTS_PAGE = "/v2/index.php?page=projects_report"
-_PROJECTS_RENDER = "/v2/content/projectsReport/renderProjectsReport.php"
-
-
-def parse_projects_report(data: dict, user_id: str = "") -> list[TaskRow]:
-    """Per-day task time from renderProjectsReport's JSON.
-
-    The report is filtered to the signed-in user already; `user_id` only
-    matters for an account that sees others (TD_USER_ID).
-    """
-    if not isinstance(data.get("report"), list):
-        raise FetchError("Time Doctor's projects report came back without a report.")
-    rows: list[TaskRow] = []
-    for project in data["report"]:
-        pname = str(project.get("name") or "")
-        for user in project.get("users") or []:
-            if user_id and str(user.get("id")) != user_id:
-                continue
-            for task in user.get("tasks") or []:
-                tid, tname = str(task.get("id") or ""), str(task.get("name") or "").strip()
-                for e in task.get("entries") or []:
-                    seconds = int(e.get("workedTime") or 0)
-                    if seconds:
-                        rows.append((date.fromisoformat(e["date"]), tid, tname, pname, seconds))
-    return rows
-
-
-async def _tasks(page, start: date, end: date) -> list[TaskRow]:
-    s = settings()
-    async with page.expect_request(lambda r: _PROJECTS_RENDER in r.url, timeout=45_000) as req:
-        await page.goto(s.td_base_url + _PROJECTS_PAGE, wait_until="domcontentloaded")
+        if _on_login_page(page.url):
+            raise _NotSignedIn()
+        raise
     form = parse_qsl((await req.value).post_data or "", keep_blank_values=True)
-    if not any(k == "csrf_token" for k, _ in form):
-        raise FetchError("The projects report's request has changed shape (no csrf_token).")
-    form = [(k, start.isoformat() if k == "fromDate" else end.isoformat() if k == "toDate" else
-             "daily" if k == "reportType" else v) for k, v in form]
+    if not any(k == "userIds" for k, _ in form):
+        raise FetchError("The timeline report's request has changed shape (no userIds).")
+    return form
+
+
+async def _timezone_id(page, iana: str) -> str:
+    r = await page.request.get(settings().td_base_url + "/timezones", headers={"X-Requested-With": "XMLHttpRequest"})
+    tzid = find_timezone_id(await r.json(), iana) if r.ok else None
+    if not tzid:
+        raise FetchError(f"Time Doctor has no time zone for {iana}; pick a city zone it lists in settings.")
+    return tzid
+
+
+async def _timeline_day(page, form: list[tuple[str, str]], tzid: str, day: date) -> tuple[int, list[TaskRow]]:
+    d = day.isoformat()
+    body = [(k, d if k in ("fromDate", "toDate") else tzid if k == "timezone" else v) for k, v in form]
     r = await page.request.post(
-        s.td_base_url + _PROJECTS_RENDER,
-        data=urlencode(form),
+        settings().td_base_url + _TIMELINE_DATA,
+        data=urlencode(body),
         headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                  "X-Requested-With": "XMLHttpRequest"},
     )
+    if _on_login_page(r.url):
+        raise _NotSignedIn()
     if not r.ok:
-        raise FetchError(f"Time Doctor's projects report answered HTTP {r.status}.")
-    return parse_projects_report(await r.json(), s.td_user_id)
+        raise FetchError(f"Time Doctor's timeline answered HTTP {r.status} for {d}.")
+    try:
+        data = await r.json()
+    except Exception:
+        raise _NotSignedIn()
+    return parse_timeline(data, day)
 
 
 async def _save_debug(page, what: str) -> None:
@@ -318,17 +322,11 @@ async def _save_debug(page, what: str) -> None:
         log.warning("could not save debug page: %s", e)
 
 
-async def fetch_spans(
-    spans: list[tuple[date, date]],
-    task_span: tuple[date, date] | None = None,
-    headed: bool = False,
-) -> tuple[dict[date, int], list[TaskRow] | None]:
-    """Several ranges in one browser session (the backfill reads a month at a time).
+async def fetch_days(days: list[date], iana: str, headed: bool = False) -> tuple[dict[date, int], list[TaskRow]]:
+    """Worked seconds and task time for each day, days counted in `iana`.
 
-    Returns seconds per day, every day of every range present (0 where
-    nothing was tracked), and, if `task_span` is given, the task time in it.
-    The task read is a bonus: if it fails, the hours still count, the error
-    is logged, and the tasks come back as None so the old ones are kept.
+    One browser session, one request per day. Every day asked for is in the
+    result, 0 where nothing was tracked.
     """
     from playwright.async_api import async_playwright
 
@@ -344,32 +342,28 @@ async def fetch_spans(
                 locale="en-US",
             )
             page = await context.new_page()
-            out: dict[date, int] = {}
-            signed_in = False
-            for start, end in spans:
+            try:
+                form = await _timeline_form(page)
+            except _NotSignedIn:
+                # The saved cookies have run out (or there were none).
+                await _login(page)
                 try:
-                    found = await _timesheet(page, start, end)
+                    form = await _timeline_form(page)
                 except _NotSignedIn:
-                    if signed_in:
-                        raise FetchError("Signed in, but the timesheet still says not signed in.")
-                    # The saved cookies have run out (or there were none).
-                    await _login(page)
-                    signed_in = True
-                    try:
-                        found = await _timesheet(page, start, end)
-                    except _NotSignedIn:
-                        raise FetchError("Signed in, but the timesheet still says not signed in.")
-                    await context.storage_state(path=state)
-                    os.chmod(state, 0o600)
-                out.update(cover(found, start, end))
-            tasks = None
-            if task_span:
-                try:
-                    tasks = await _tasks(page, *task_span)
-                except Exception as e:
-                    log.warning("task time not read: %s: %s", type(e).__name__, str(e)[:200])
-                    await _save_debug(page, "tasks-failed")
-            return out, tasks
+                    raise FetchError("Signed in, but Time Doctor still sends the timeline to the login page.")
+                await context.storage_state(path=state)
+                os.chmod(state, 0o600)
+            tzid = await _timezone_id(page, iana)
+            seconds: dict[date, int] = {}
+            tasks: list[TaskRow] = []
+            for day in days:
+                total, rows = await _timeline_day(page, form, tzid, day)
+                seconds[day] = total
+                tasks.extend(rows)
+            return seconds, tasks
+        except _NotSignedIn:
+            await _save_debug(page, "failed")
+            raise FetchError("Time Doctor's session ended mid-read; the next read signs in again.")
         except FetchError:
             await _save_debug(page, "failed")
             raise

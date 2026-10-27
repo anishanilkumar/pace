@@ -65,22 +65,20 @@ def test_task_time_is_replaced_per_range():
     assert db.tasks(d, d) == [(d, "Build", "TAI", 2400)]
 
 
-def test_backfill_reads_six_months_once():
+def test_reads_history_once_then_the_month_daily_then_two_days():
     today = date(2026, 10, 27)
-    spans = worker.backfill_spans(today, None)
-    assert spans[0] == (date(2026, 4, 1), date(2026, 4, 30))
-    assert spans[-1] == (date(2026, 9, 1), date(2026, 9, 30))
-    assert len(spans) == 6
-    # Done already: nothing more to read.
-    assert worker.backfill_spans(today, date(2026, 4, 1)) == []
-    # A month on, the window moves forward over data already read.
-    assert worker.backfill_spans(date(2026, 11, 20), date(2026, 4, 1)) == []
-    # A deeper window (or a first backfill that reached less far) reads only the gap.
-    assert worker.backfill_spans(today, date(2026, 6, 1)) == [
-        (date(2026, 4, 1), date(2026, 4, 30)), (date(2026, 5, 1), date(2026, 5, 31))]
-    # Early in a month the regular span covers last month, so it isn't backfilled.
-    early = worker.backfill_spans(date(2026, 11, 2), None)
-    assert early[-1] == (date(2026, 9, 1), date(2026, 9, 30))
+    z = "Europe/Berlin"
+    first = worker.days_to_read(today, None, None, z)
+    assert first[0] == date(2026, 4, 1) and first[-1] == today
+    month = worker.days_to_read(today, f"{z}:2026-04-01", None, z)
+    assert month[0] == date(2026, 10, 1)
+    assert worker.days_to_read(today, f"{z}:2026-04-01", "2026-10-27", z) == [date(2026, 10, 26), today]
+    # A new month doesn't send the whole history round again...
+    assert worker.days_to_read(date(2026, 11, 20), f"{z}:2026-04-01", "2026-11-20", z)[0] == date(2026, 11, 19)
+    # ...but a new time zone does: the days split differently.
+    assert worker.days_to_read(today, "Asia/Kolkata:2026-04-01", "2026-10-27", z)[0] == date(2026, 4, 1)
+    # Early in a month, the daily re-read covers last month too.
+    assert worker.days_to_read(date(2026, 11, 2), f"{z}:2026-04-01", None, z)[0] == date(2026, 10, 1)
 
 
 def test_summary_has_history():
